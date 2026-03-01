@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -295,6 +295,8 @@ func (m *Manager) MonitorServer() *monitor.Server {
 }
 
 // createBox builds a sing-box instance from config.
+// It retries automatically when individual outbounds fail sing-box validation,
+// removing the offending outbound each time.
 func (m *Manager) createBox(ctx context.Context, cfg *config.Config) (*box.Box, error) {
 	if cfg == nil {
 		return nil, errors.New("config is nil")
@@ -308,21 +310,57 @@ func (m *Manager) createBox(ctx context.Context, cfg *config.Config) (*box.Box, 
 		return nil, fmt.Errorf("build sing-box options: %w", err)
 	}
 
-	inboundRegistry := include.InboundRegistry()
-	outboundRegistry := include.OutboundRegistry()
-	pool.Register(outboundRegistry)
-	endpointRegistry := include.EndpointRegistry()
-	dnsRegistry := include.DNSTransportRegistry()
-	serviceRegistry := include.ServiceRegistry()
+	const maxRetries = 200 // Increased to handle large subscription sources with many invalid nodes
+	outboundErrRe := regexp.MustCompile(`initialize outbound\[(\d+)\]`)
 
-	boxCtx := box.Context(ctx, inboundRegistry, outboundRegistry, endpointRegistry, dnsRegistry, serviceRegistry)
-	boxCtx = monitor.ContextWith(boxCtx, m.monitorMgr)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		inboundRegistry := include.InboundRegistry()
+		outboundRegistry := include.OutboundRegistry()
+		pool.Register(outboundRegistry)
+		endpointRegistry := include.EndpointRegistry()
+		dnsRegistry := include.DNSTransportRegistry()
+		serviceRegistry := include.ServiceRegistry()
 
-	instance, err := box.New(box.Options{Context: boxCtx, Options: opts})
-	if err != nil {
-		return nil, fmt.Errorf("create sing-box instance: %w", err)
+		boxCtx := box.Context(ctx, inboundRegistry, outboundRegistry, endpointRegistry, dnsRegistry, serviceRegistry)
+		boxCtx = monitor.ContextWith(boxCtx, m.monitorMgr)
+
+		instance, err := box.New(box.Options{Context: boxCtx, Options: opts})
+		if err == nil {
+			if attempt > 0 {
+				log.Printf("✅ sing-box instance created after removing %d invalid outbound(s)", attempt)
+			}
+			return instance, nil
+		}
+
+		// Check if this is an outbound initialization error we can recover from
+		matches := outboundErrRe.FindStringSubmatch(err.Error())
+		if matches == nil {
+			return nil, fmt.Errorf("create sing-box instance: %w", err)
+		}
+
+		idx, convErr := strconv.Atoi(matches[1])
+		if convErr != nil || idx < 0 || idx >= len(opts.Outbounds) {
+			return nil, fmt.Errorf("create sing-box instance: %w", err)
+		}
+
+		badTag := opts.Outbounds[idx].Tag
+		log.Printf("⚠️  Outbound '%s' failed sing-box validation: %v (removing and retrying)", badTag, err)
+
+		// Remove the offending outbound
+		opts.Outbounds = append(opts.Outbounds[:idx], opts.Outbounds[idx+1:]...)
+
+		// Also remove the tag from any pool outbound's member list
+		for i := range opts.Outbounds {
+			if opts.Outbounds[i].Type == pool.Type {
+				if poolOpts, ok := opts.Outbounds[i].Options.(*pool.Options); ok {
+					poolOpts.Members = removeFromSlice(poolOpts.Members, badTag)
+					delete(poolOpts.Metadata, badTag)
+				}
+			}
+		}
 	}
-	return instance, nil
+
+	return nil, fmt.Errorf("create sing-box instance: too many invalid outbounds (exceeded %d retries)", maxRetries)
 }
 
 // gracefulSwitch swaps the current box with a new one.
@@ -358,6 +396,17 @@ func (m *Manager) drainOldBox(oldBox *box.Box, timeout time.Duration) {
 		return
 	}
 	m.logger.Infof("old instance closed after %s drain", timeout)
+}
+
+// removeFromSlice removes an element from a string slice.
+func removeFromSlice(slice []string, element string) []string {
+	result := make([]string, 0, len(slice))
+	for _, s := range slice {
+		if s != element {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // waitForHealthCheck polls until enough nodes are available or timeout.
@@ -672,16 +721,6 @@ func extractPortFromBindError(err error) uint16 {
 	return 0
 }
 
-// isPortAvailable checks if a port is available for binding.
-func isPortAvailable(address string, port uint16) bool {
-	addr := fmt.Sprintf("%s:%d", address, port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return false
-	}
-	_ = ln.Close()
-	return true
-}
 
 // reassignConflictingPort finds the node using the conflicting port and assigns a new port.
 func reassignConflictingPort(cfg *config.Config, conflictPort uint16) bool {
@@ -703,7 +742,7 @@ func reassignConflictingPort(cfg *config.Config, conflictPort uint16) bool {
 			if address == "" {
 				address = "0.0.0.0"
 			}
-			for usedPorts[newPort] || !isPortAvailable(address, newPort) {
+			for usedPorts[newPort] || !config.IsPortAvailable(address, newPort) {
 				newPort++
 				if newPort > 65535 {
 					log.Printf("❌ No available port found for node %q", cfg.Nodes[idx].Name)

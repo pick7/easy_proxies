@@ -546,6 +546,12 @@ func (p *poolOutbound) makeProbeFunc(member *memberState) func(ctx context.Conte
 		if member.entry != nil {
 			member.entry.RecordSuccessWithLatency(duration)
 		}
+		// Clear pool blacklist on successful probe — a node that passes
+		// health check should be available for selection immediately,
+		// not remain blacklisted for the full duration (fixes #8, #9).
+		if member.shared != nil {
+			member.shared.forceRelease()
+		}
 		return duration, nil
 	}
 }
@@ -606,6 +612,10 @@ func (p *poolOutbound) makeProbeByTagFunc(tag string) func(ctx context.Context) 
 		duration := time.Since(start)
 		if member.entry != nil {
 			member.entry.RecordSuccessWithLatency(duration)
+		}
+		// Clear pool blacklist on successful probe (fixes #8, #9)
+		if member.shared != nil {
+			member.shared.forceRelease()
 		}
 		return duration, nil
 	}

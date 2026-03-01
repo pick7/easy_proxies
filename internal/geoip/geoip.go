@@ -2,6 +2,7 @@ package geoip
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -47,6 +48,8 @@ type Lookup struct {
 	updateInterval time.Duration
 	stopChan       chan struct{}
 	updateOnce     sync.Once
+	dnsCache       map[string]RegionInfo
+	cacheMu        sync.RWMutex
 }
 
 // EnsureDatabase checks if the GeoIP database exists, and downloads it if not
@@ -212,37 +215,6 @@ func validateMMDB(path string) error {
 	return nil
 }
 
-// downloadFile downloads a file from URL to the specified path
-func downloadFile(filepath string, url string) error {
-	// Create the file
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	// Get the data
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Check server response
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
-	}
-
-	// Writer the body to file
-	size, err := io.Copy(out, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("   Downloaded %d bytes", size)
-	return nil
-}
-
 // New creates a new GeoIP lookup instance
 func New(dbPath string) (*Lookup, error) {
 	return NewWithAutoUpdate(dbPath, 0)
@@ -269,6 +241,7 @@ func NewWithAutoUpdate(dbPath string, updateInterval time.Duration) (*Lookup, er
 		path:           dbPath,
 		updateInterval: updateInterval,
 		stopChan:       make(chan struct{}),
+		dnsCache:       make(map[string]RegionInfo),
 	}
 
 	// Start auto-update goroutine if interval is set
@@ -340,9 +313,9 @@ func (l *Lookup) Update() error {
 }
 
 // downloadDatabase downloads the GeoIP database to the specified path
-func downloadDatabase(filepath string) error {
+func downloadDatabase(dbPath string) error {
 	// Create parent directory if needed
-	dir := filepath[:strings.LastIndex(filepath, "/")]
+	dir := filepath.Dir(dbPath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("create directory: %w", err)
@@ -405,7 +378,7 @@ func downloadDatabase(filepath string) error {
 	tempFile = nil
 
 	// Rename to target path
-	if err := os.Rename(tempPath, filepath); err != nil {
+	if err := os.Rename(tempPath, dbPath); err != nil {
 		return err
 	}
 	cleanup = false
@@ -476,18 +449,41 @@ func (l *Lookup) LookupURI(uri string) RegionInfo {
 		return RegionInfo{Code: RegionOther, Country: "Unknown", ISOCode: ""}
 	}
 
+	// Check DNS cache first
+	l.cacheMu.RLock()
+	if cached, ok := l.dnsCache[host]; ok {
+		l.cacheMu.RUnlock()
+		return cached
+	}
+	l.cacheMu.RUnlock()
+
 	// Resolve hostname to IP if needed
 	ip := net.ParseIP(host)
 	if ip == nil {
-		// It's a hostname, try to resolve
-		ips, err := net.LookupIP(host)
+		// It's a hostname, try to resolve with timeout
+		resolver := &net.Resolver{}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		ips, err := resolver.LookupIPAddr(ctx, host)
 		if err != nil || len(ips) == 0 {
-			return RegionInfo{Code: RegionOther, Country: "Unknown", ISOCode: ""}
+			result := RegionInfo{Code: RegionOther, Country: "Unknown", ISOCode: ""}
+			// Cache failed lookups too to avoid repeated timeouts
+			l.cacheMu.Lock()
+			l.dnsCache[host] = result
+			l.cacheMu.Unlock()
+			return result
 		}
-		host = ips[0].String()
+		host = ips[0].IP.String()
 	}
 
-	return l.LookupIP(host)
+	result := l.LookupIP(host)
+
+	// Cache the result
+	l.cacheMu.Lock()
+	l.dnsCache[extractHostFromURI(uri)] = result
+	l.cacheMu.Unlock()
+
+	return result
 }
 
 // extractHostFromURI extracts the host/IP from various proxy URI formats
@@ -495,13 +491,17 @@ func extractHostFromURI(uri string) string {
 	// Handle different URI schemes
 	lowerURI := strings.ToLower(uri)
 
-	// vmess:// vless:// trojan:// ss:// ssr:// hysteria:// hysteria2:// hy2://
+	// Standard URL-parseable schemes (ss:// and ssr:// handled separately below)
 	if strings.HasPrefix(lowerURI, "vmess://") ||
 		strings.HasPrefix(lowerURI, "vless://") ||
 		strings.HasPrefix(lowerURI, "trojan://") ||
 		strings.HasPrefix(lowerURI, "hysteria://") ||
 		strings.HasPrefix(lowerURI, "hysteria2://") ||
-		strings.HasPrefix(lowerURI, "hy2://") {
+		strings.HasPrefix(lowerURI, "hy2://") ||
+		strings.HasPrefix(lowerURI, "socks5://") ||
+		strings.HasPrefix(lowerURI, "socks://") ||
+		strings.HasPrefix(lowerURI, "http://") ||
+		strings.HasPrefix(lowerURI, "https://") {
 		// Standard URL format: scheme://user@host:port?params#fragment
 		parsed, err := url.Parse(uri)
 		if err != nil {

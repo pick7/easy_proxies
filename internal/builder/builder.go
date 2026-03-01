@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"easy_proxies/internal/config"
@@ -57,7 +58,11 @@ func Build(cfg *config.Config) (option.Options, error) {
 		regionMembers[region] = []string{}
 	}
 
-	for _, node := range cfg.Nodes {
+	totalNodes := len(cfg.Nodes)
+	for i, node := range cfg.Nodes {
+		if i > 0 && i%1000 == 0 {
+			log.Printf("⏳ Building nodes... %d/%d", i, totalNodes)
+		}
 		baseTag := sanitizeTag(node.Name)
 		if baseTag == "" {
 			baseTag = fmt.Sprintf("node-%d", len(memberTags)+1)
@@ -94,19 +99,81 @@ func Build(cfg *config.Config) (option.Options, error) {
 			meta.Port = cfg.Listener.Port
 		}
 
-		// GeoIP lookup for region classification
-		if geoLookup != nil && geoLookup.IsEnabled() {
-			regionInfo := geoLookup.LookupURI(node.URI)
-			meta.Region = regionInfo.Code
-			meta.Country = regionInfo.Country
-			regionMembers[regionInfo.Code] = append(regionMembers[regionInfo.Code], tag)
-		} else {
-			meta.Region = geoip.RegionOther
-			meta.Country = "Unknown"
-			regionMembers[geoip.RegionOther] = append(regionMembers[geoip.RegionOther], tag)
-		}
+		// Default region (will be updated by concurrent GeoIP resolution)
+		meta.Region = geoip.RegionOther
+		meta.Country = "Unknown"
 
 		metadata[tag] = meta
+	}
+
+	// Concurrent GeoIP resolution
+	if geoLookup != nil && geoLookup.IsEnabled() {
+		geoStart := time.Now()
+		log.Printf("🌍 Resolving GeoIP for %d nodes (concurrent)...", len(memberTags))
+
+		type geoResult struct {
+			index  int
+			tag    string
+			region geoip.RegionInfo
+		}
+
+		results := make(chan geoResult, len(memberTags))
+		var wg sync.WaitGroup
+
+		// Worker pool: min(32, len(memberTags))
+		workerCount := 32
+		if len(memberTags) < workerCount {
+			workerCount = len(memberTags)
+		}
+
+		// Job channel
+		type geoJob struct {
+			index int
+			tag   string
+			uri   string
+		}
+		jobs := make(chan geoJob, len(memberTags))
+
+		// Start workers
+		for w := 0; w < workerCount; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for job := range jobs {
+					region := geoLookup.LookupURI(job.uri)
+					results <- geoResult{index: job.index, tag: job.tag, region: region}
+				}
+			}()
+		}
+
+		// Send jobs
+		for i, tag := range memberTags {
+			meta := metadata[tag]
+			jobs <- geoJob{index: i, tag: tag, uri: meta.URI}
+		}
+		close(jobs)
+
+		// Wait for completion and close results
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		// Collect results
+		for res := range results {
+			meta := metadata[res.tag]
+			meta.Region = res.region.Code
+			meta.Country = res.region.Country
+			metadata[res.tag] = meta
+			regionMembers[res.region.Code] = append(regionMembers[res.region.Code], res.tag)
+		}
+
+		log.Printf("🌍 GeoIP resolution completed in %.1fs", time.Since(geoStart).Seconds())
+	} else {
+		// No GeoIP - assign all to "other" region
+		for _, tag := range memberTags {
+			regionMembers[geoip.RegionOther] = append(regionMembers[geoip.RegionOther], tag)
+		}
 	}
 
 	// Close GeoIP database after lookup
@@ -348,6 +415,18 @@ func buildNodeOutbound(tag, rawURI string, skipCertVerify bool) (option.Outbound
 			return option.Outbound{}, err
 		}
 		return option.Outbound{Type: C.TypeVMess, Tag: tag, Options: &opts}, nil
+	case "socks5", "socks":
+		opts, err := buildSOCKSOptions(parsed)
+		if err != nil {
+			return option.Outbound{}, err
+		}
+		return option.Outbound{Type: C.TypeSOCKS, Tag: tag, Options: &opts}, nil
+	case "http", "https":
+		opts, err := buildHTTPProxyOptions(parsed, skipCertVerify)
+		if err != nil {
+			return option.Outbound{}, err
+		}
+		return option.Outbound{Type: C.TypeHTTP, Tag: tag, Options: &opts}, nil
 	default:
 		return option.Outbound{}, fmt.Errorf("unsupported scheme %q", parsed.Scheme)
 	}
@@ -363,6 +442,18 @@ func buildVLESSOptions(u *url.URL, skipCertVerify bool) (option.VLESSOutboundOpt
 		return option.VLESSOutboundOptions{}, err
 	}
 	query := u.Query()
+
+	// Pre-validate flow - reject unsupported XTLS flows
+	if flow := query.Get("flow"); flow != "" {
+		unsupportedFlows := []string{"xtls-rprx-direct", "xtls-rprx-origin", "xtls-rprx-splice"}
+		flowLower := strings.ToLower(flow)
+		for _, unsupported := range unsupportedFlows {
+			if flowLower == unsupported {
+				return option.VLESSOutboundOptions{}, fmt.Errorf("unsupported flow: %s (deprecated XTLS)", flow)
+			}
+		}
+	}
+
 	opts := option.VLESSOutboundOptions{
 		UUID:          uuid,
 		ServerOptions: option.ServerOptions{Server: server, ServerPort: uint16(port)},
@@ -457,7 +548,23 @@ func buildTLSOptions(query url.Values, skipCertVerify bool) (*option.OutboundTLS
 		tlsOptions.UTLS = &option.OutboundUTLSOptions{Enabled: true, Fingerprint: fp}
 	}
 	if security == "reality" {
-		tlsOptions.Reality = &option.OutboundRealityOptions{Enabled: true, PublicKey: query.Get("pbk"), ShortID: query.Get("sid")}
+		pbk := query.Get("pbk")
+		// Validate reality public key - must be valid base64 and 32 bytes (43-44 chars base64)
+		if pbk == "" {
+			return nil, fmt.Errorf("reality security requires public_key (pbk parameter)")
+		}
+		// Try to decode the public key to validate it
+		decoded, err := base64.RawURLEncoding.DecodeString(pbk)
+		if err != nil {
+			decoded, err = base64.StdEncoding.DecodeString(pbk)
+			if err != nil {
+				return nil, fmt.Errorf("invalid reality public_key: %w", err)
+			}
+		}
+		if len(decoded) != 32 {
+			return nil, fmt.Errorf("invalid reality public_key: expected 32 bytes, got %d", len(decoded))
+		}
+		tlsOptions.Reality = &option.OutboundRealityOptions{Enabled: true, PublicKey: pbk, ShortID: query.Get("sid")}
 		// Reality requires uTLS; use default fingerprint if not specified
 		if tlsOptions.UTLS == nil {
 			if fp == "" {
@@ -474,6 +581,17 @@ func buildV2RayTransport(query url.Values) (*option.V2RayTransportOptions, error
 	if transportType == "" || transportType == "tcp" {
 		return nil, nil
 	}
+
+	// Pre-validate transport type - reject unsupported types early
+	unsupportedTransports := map[string]bool{
+		"kcp":  true,
+		"raw":  true,
+		"quic": true, // sing-box doesn't support QUIC as V2Ray transport
+	}
+	if unsupportedTransports[transportType] {
+		return nil, fmt.Errorf("unsupported transport type: %s", transportType)
+	}
+
 	options := &option.V2RayTransportOptions{Type: transportType}
 	switch transportType {
 	case C.V2RayTransportTypeWebsocket:
@@ -541,7 +659,7 @@ func buildShadowsocksOptions(u *url.URL) (option.ShadowsocksOutboundOptions, err
 		return option.ShadowsocksOutboundOptions{}, errors.New("shadowsocks userinfo format must be method:password")
 	}
 
-	method := parts[0]
+	method := normalizeShadowsocksMethod(parts[0])
 	password := parts[1]
 
 	opts := option.ShadowsocksOutboundOptions{
@@ -552,8 +670,9 @@ func buildShadowsocksOptions(u *url.URL) (option.ShadowsocksOutboundOptions, err
 
 	query := u.Query()
 	if plugin := query.Get("plugin"); plugin != "" {
-		opts.Plugin = plugin
-		opts.PluginOptions = query.Get("plugin-opts")
+		// sing-box library mode doesn't support external plugins like v2ray-plugin
+		// These require the plugin binary to be installed separately
+		return option.ShadowsocksOutboundOptions{}, fmt.Errorf("shadowsocks plugin not supported: %s (requires external binary)", plugin)
 	}
 
 	return opts, nil
@@ -840,6 +959,65 @@ func hostPort(u *url.URL, defaultPort int) (string, int, error) {
 		return "", 0, fmt.Errorf("invalid port %q", portStr)
 	}
 	return host, port, nil
+}
+
+// normalizeShadowsocksMethod maps common Shadowsocks method aliases to the
+// canonical names expected by sing-box.
+func normalizeShadowsocksMethod(method string) string {
+	aliases := map[string]string{
+		"chacha20-poly1305": "chacha20-ietf-poly1305",
+		"chacha20":          "chacha20-ietf",
+		"auto":              "aes-128-gcm", // "auto" is not valid in sing-box, default to aes-128-gcm
+	}
+	if canonical, ok := aliases[strings.ToLower(method)]; ok {
+		return canonical
+	}
+	return method
+}
+
+func buildSOCKSOptions(u *url.URL) (option.SOCKSOutboundOptions, error) {
+	server, port, err := hostPort(u, 1080)
+	if err != nil {
+		return option.SOCKSOutboundOptions{}, err
+	}
+	opts := option.SOCKSOutboundOptions{
+		ServerOptions: option.ServerOptions{Server: server, ServerPort: uint16(port)},
+		Version:       "5",
+		Network:       option.NetworkList(""),
+	}
+	if u.User != nil {
+		opts.Username = u.User.Username()
+		if pass, ok := u.User.Password(); ok {
+			opts.Password = pass
+		}
+	}
+	return opts, nil
+}
+
+func buildHTTPProxyOptions(u *url.URL, skipCertVerify bool) (option.HTTPOutboundOptions, error) {
+	server, port, err := hostPort(u, 8080)
+	if err != nil {
+		return option.HTTPOutboundOptions{}, err
+	}
+	opts := option.HTTPOutboundOptions{
+		ServerOptions: option.ServerOptions{Server: server, ServerPort: uint16(port)},
+	}
+	if u.User != nil {
+		opts.Username = u.User.Username()
+		if pass, ok := u.User.Password(); ok {
+			opts.Password = pass
+		}
+	}
+	if strings.ToLower(u.Scheme) == "https" {
+		opts.OutboundTLSOptionsContainer = option.OutboundTLSOptionsContainer{
+			TLS: &option.OutboundTLSOptions{
+				Enabled:    true,
+				ServerName: u.Hostname(),
+				Insecure:   skipCertVerify,
+			},
+		}
+	}
+	return opts, nil
 }
 
 func parseAddr(value string) (*badoption.Addr, error) {

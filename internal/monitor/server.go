@@ -372,13 +372,15 @@ func (s *Server) handleProbeAll(w http.ResponseWriter, r *http.Request) {
 	snapshots := s.mgr.Snapshot()
 	total := len(snapshots)
 	if total == 0 {
-		fmt.Fprintf(w, "data: %s\n\n", `{"type":"complete","total":0,"success":0,"failed":0}`)
+		emptyData, _ := json.Marshal(map[string]any{"type": "complete", "total": 0, "success": 0, "failed": 0})
+		fmt.Fprintf(w, "data: %s\n\n", emptyData)
 		flusher.Flush()
 		return
 	}
 
 	// Send start event
-	fmt.Fprintf(w, "data: %s\n\n", fmt.Sprintf(`{"type":"start","total":%d}`, total))
+	startData, _ := json.Marshal(map[string]any{"type": "start", "total": total})
+	fmt.Fprintf(w, "data: %s\n\n", startData)
 	flusher.Flush()
 
 	// Create context with timeout
@@ -454,28 +456,36 @@ func (s *Server) handleProbeAll(w http.ResponseWriter, r *http.Request) {
 			successCount++
 		}
 
-		progress := float64(count) / float64(total) * 100
 		status := "success"
 		if result.err != "" {
 			status = "error"
 		}
 
-		eventData := fmt.Sprintf(`{"type":"progress","tag":"%s","name":"%s","latency":%d,"status":"%s","error":"%s","current":%d,"total":%d,"progress":%.1f}`,
-			result.tag, result.name, result.latency, status, result.err, count, total, progress)
+		eventPayload := map[string]any{
+			"type":     "progress",
+			"tag":      result.tag,
+			"name":     result.name,
+			"latency":  result.latency,
+			"status":   status,
+			"error":    result.err,
+			"current":  count,
+			"total":    total,
+			"progress": float64(count) / float64(total) * 100,
+		}
+		eventData, _ := json.Marshal(eventPayload)
 		fmt.Fprintf(w, "data: %s\n\n", eventData)
 		flusher.Flush()
 	}
 
 	// Send complete event
-	fmt.Fprintf(w, "data: %s\n\n", fmt.Sprintf(`{"type":"complete","total":%d,"success":%d,"failed":%d}`, total, successCount, failedCount))
+	completeData, _ := json.Marshal(map[string]any{"type": "complete", "total": total, "success": successCount, "failed": failedCount})
+	fmt.Fprintf(w, "data: %s\n\n", completeData)
 	flusher.Flush()
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 // withAuth 认证中间件，如果配置了密码则需要验证
@@ -672,13 +682,14 @@ func (s *Server) handleSubscriptionStatus(w http.ResponseWriter, r *http.Request
 
 	status := s.subRefresher.Status()
 	writeJSON(w, map[string]any{
-		"enabled":       true,
-		"last_refresh":  status.LastRefresh,
-		"next_refresh":  status.NextRefresh,
-		"node_count":    status.NodeCount,
-		"last_error":    status.LastError,
-		"refresh_count": status.RefreshCount,
-		"is_refreshing": status.IsRefreshing,
+		"enabled":        true,
+		"last_refresh":   status.LastRefresh,
+		"next_refresh":   status.NextRefresh,
+		"node_count":     status.NodeCount,
+		"last_error":     status.LastError,
+		"refresh_count":  status.RefreshCount,
+		"is_refreshing":  status.IsRefreshing,
+		"nodes_modified": status.NodesModified,
 	})
 }
 
@@ -910,15 +921,5 @@ func (s *Server) cleanupExpiredSessions() {
 
 // secureCompareStrings performs constant-time string comparison to prevent timing attacks.
 func secureCompareStrings(a, b string) bool {
-	aBytes := []byte(a)
-	bBytes := []byte(b)
-
-	// If lengths differ, still perform a dummy comparison to maintain constant time
-	if len(aBytes) != len(bBytes) {
-		dummy := make([]byte, 32)
-		subtle.ConstantTimeCompare(dummy, dummy)
-		return false
-	}
-
-	return subtle.ConstantTimeCompare(aBytes, bBytes) == 1
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

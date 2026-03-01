@@ -32,7 +32,7 @@ listener:
 # 代理池配置
 # ───────────────────────────────────────────────────────────────
 pool:
-  # 调度模式: sequential（顺序）, random（随机）
+  # 调度模式: sequential（顺序）, random（随机）, balance（均衡）
   mode: sequential
   # 连续失败多少次后加入黑名单
   failure_threshold: 3
@@ -58,24 +58,25 @@ management:
   password: ""                                       # WebUI 访问密码，为空则不需要密码
 
 # ───────────────────────────────────────────────────────────────
+# DNS 配置（用于节点域名解析，尤其是 VMess）
+# ───────────────────────────────────────────────────────────────
+dns:
+  server: 223.5.5.5         # DNS 服务器地址
+  fallback_servers:          # DNS 解析失败时的备用服务器（主 DNS 为国内 DNS 时自动添加）
+    - 8.8.8.8               # Google DNS
+    - 1.1.1.1               # Cloudflare DNS
+  port: 53                  # DNS 端口
+  strategy: prefer_ipv4     # as_is / prefer_ipv4 / prefer_ipv6 / ipv4_only / ipv6_only
+
+# ───────────────────────────────────────────────────────────────
 # GeoIP 地域分区配置（可选）
 # ───────────────────────────────────────────────────────────────
-# 启用后，节点会按地域自动分组，可通过路径访问特定地域的代理池：
-#   http://127.0.0.1:2323/jp    - 日本节点
-#   http://127.0.0.1:2323/kr    - 韩国节点
-#   http://127.0.0.1:2323/us    - 美国节点
-#   http://127.0.0.1:2323/hk    - 香港节点
-#   http://127.0.0.1:2323/tw    - 台湾节点
-#   http://127.0.0.1:2323/sg    - 新加坡节点
-#   http://127.0.0.1:2323/other - 其他地域
-#   http://127.0.0.1:2323/      - 全部节点（默认）
+# 启用后会为节点打上地域标签（jp/kr/us/hk/tw/other），用于 WebUI 统计和筛选。
 geoip:
-  enabled: false                                     # 是否启用 GeoIP 地域分区
+  enabled: false                                     # 是否启用 GeoIP 地域标记
   database_path: "./GeoLite2-Country.mmdb"           # GeoIP 数据库路径（首次启动时自动下载）
   auto_update_enabled: true                          # 是否启用自动更新数据库（推荐）
   auto_update_interval: 24h                          # 自动更新间隔（默认 24 小时）
-  # listen: 0.0.0.0                                  # GeoIP 路由监听地址（默认使用 listener 配置）
-  # port: 2323                                       # GeoIP 路由监听端口（默认 2323）
   # 注意：
   #   - 首次启动会自动从 GitHub 下载 GeoIP 数据库（约 9MB）
   #   - 启用 auto_update_enabled 后，数据库会定期自动更新，无需重启容器
@@ -130,7 +131,9 @@ nodes:
 # - Trojan:   trojan://password@server:port?params#name
 # - SS:       ss://method:password@server:port#name
 #             ss://base64(method:password)@server:port#name
-# - SSR:      ssr://base64_encoded
 # - Hysteria2: hy2://password@server:port?params#name
-# - HTTP:     http://user:pass@server:port
-# - SOCKS5:   socks5://user:pass@server:port
+# - SOCKS5:  socks5://[user:pass@]server:port#name
+# - HTTP:    http://[user:pass@]server:port#name
+#            https://[user:pass@]server:port#name
+# 注意：解析器可识别部分额外协议前缀（如 ssr://、hysteria://），
+# 但当前内核实际构建仅支持以上 7 类，其他会被跳过并输出日志。

@@ -169,10 +169,10 @@ func (c *Config) normalize() error {
 		c.MultiPort.Address = "0.0.0.0"
 	}
 	if c.MultiPort.BasePort == 0 {
-		c.MultiPort.BasePort = 28000
+		c.MultiPort.BasePort = 24000
 	}
 	if c.Management.Listen == "" {
-		c.Management.Listen = "127.0.0.1:9090"
+		c.Management.Listen = "127.0.0.1:9091"
 	}
 	if c.Management.ProbeTarget == "" {
 		c.Management.ProbeTarget = "www.apple.com:80"
@@ -281,7 +281,7 @@ func (c *Config) normalize() error {
 
 		// Auto-assign port in multi-port/hybrid mode, skip occupied ports
 		if c.Nodes[idx].Port == 0 && (c.Mode == "multi-port" || c.Mode == "hybrid") {
-			for !isPortAvailable(c.MultiPort.Address, portCursor) {
+			for !IsPortAvailable(c.MultiPort.Address, portCursor) {
 				log.Printf("⚠️  Port %d is in use, trying next port", portCursor)
 				portCursor++
 				if portCursor > 65535 {
@@ -318,7 +318,7 @@ func (c *Config) normalize() error {
 			if c.Nodes[idx].Port == poolPort {
 				// Find next available port
 				newPort := c.Nodes[idx].Port + 1
-				for usedPorts[newPort] || !isPortAvailable(c.MultiPort.Address, newPort) {
+				for usedPorts[newPort] || !IsPortAvailable(c.MultiPort.Address, newPort) {
 					newPort++
 					if newPort > 65535 {
 						return fmt.Errorf("no available port for node %q after conflict with pool port %d", c.Nodes[idx].Name, poolPort)
@@ -379,10 +379,10 @@ func (c *Config) NormalizeWithPortMap(portMap map[string]uint16) error {
 		c.MultiPort.Address = "0.0.0.0"
 	}
 	if c.MultiPort.BasePort == 0 {
-		c.MultiPort.BasePort = 28000
+		c.MultiPort.BasePort = 24000
 	}
 	if c.Management.Listen == "" {
-		c.Management.Listen = "127.0.0.1:9090"
+		c.Management.Listen = "127.0.0.1:9091"
 	}
 	if c.Management.ProbeTarget == "" {
 		c.Management.ProbeTarget = "www.apple.com:80"
@@ -455,7 +455,7 @@ func (c *Config) NormalizeWithPortMap(portMap map[string]uint16) error {
 	for idx := range c.Nodes {
 		if c.Nodes[idx].Port == 0 && (c.Mode == "multi-port" || c.Mode == "hybrid") {
 			// Find next available port that's not used
-			for usedPorts[portCursor] || !isPortAvailable(c.MultiPort.Address, portCursor) {
+			for usedPorts[portCursor] || !IsPortAvailable(c.MultiPort.Address, portCursor) {
 				portCursor++
 				if portCursor > 65535 {
 					return fmt.Errorf("no available ports found starting from %d", c.MultiPort.BasePort)
@@ -575,6 +575,12 @@ func parseSubscriptionContent(content string) ([]NodeConfig, error) {
 	return parseNodesFromContent(content)
 }
 
+// ParseSubscriptionContent parses subscription content in various formats (base64, plain text, Clash YAML).
+// This is exported for use by the subscription manager.
+func ParseSubscriptionContent(content string) ([]NodeConfig, error) {
+	return parseSubscriptionContent(content)
+}
+
 // parseNodesFromContent parses nodes from plain text content (one URI per line)
 func parseNodesFromContent(content string) ([]NodeConfig, error) {
 	var nodes []NodeConfig
@@ -589,7 +595,7 @@ func parseNodesFromContent(content string) ([]NodeConfig, error) {
 		}
 
 		// Check if it's a valid proxy URI
-		if isProxyURI(line) {
+		if IsProxyURI(line) {
 			nodes = append(nodes, NodeConfig{
 				URI: line,
 			})
@@ -629,11 +635,12 @@ func isBase64(s string) bool {
 	return len(s)%4 == 0
 }
 
-// isProxyURI checks if a string is a valid proxy URI
-func isProxyURI(s string) bool {
-	schemes := []string{"vmess://", "vless://", "trojan://", "ss://", "ssr://", "hysteria://", "hysteria2://", "hy2://"}
+// IsProxyURI checks if a string is a valid proxy URI
+func IsProxyURI(s string) bool {
+	schemes := []string{"vmess://", "vless://", "trojan://", "ss://", "ssr://", "hysteria://", "hysteria2://", "hy2://", "socks5://", "socks://", "http://", "https://"}
+	lower := strings.ToLower(s)
 	for _, scheme := range schemes {
-		if strings.HasPrefix(strings.ToLower(s), scheme) {
+		if strings.HasPrefix(lower, scheme) {
 			return true
 		}
 	}
@@ -937,9 +944,8 @@ func (c *Config) SaveNodes() error {
 		}
 	}
 
-	// Only update config.yaml if there are inline nodes to save
-	// and preserve the original config structure
-	if len(inlineNodes) > 0 {
+	// Update config.yaml nodes array (including clearing it when all inline nodes are deleted)
+	{
 		// Read original config to preserve structure
 		data, err := os.ReadFile(c.filePath)
 		if err != nil {
@@ -1006,8 +1012,8 @@ func (c *Config) SaveSettings() error {
 	return nil
 }
 
-// isPortAvailable checks if a port is available for binding.
-func isPortAvailable(address string, port uint16) bool {
+// IsPortAvailable checks if a port is available for binding.
+func IsPortAvailable(address string, port uint16) bool {
 	addr := fmt.Sprintf("%s:%d", address, port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {

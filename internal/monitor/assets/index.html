@@ -20,12 +20,12 @@
       --error: #ff3b30;
       --text-primary: #1d1d1f;
       --text-secondary: #86868b;
-      --bg-elevated: rgba(255, 255, 255, 0.8);
+      --bg-elevated: rgba(255, 255, 255, 0.82);
       --bg-base: #f5f5f7;
       --border: rgba(0, 0, 0, 0.06);
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
-      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-      --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.12);
+      --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.07);
+      --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.1);
     }
 
     body {
@@ -33,33 +33,33 @@
       background: var(--bg-base);
       color: var(--text-primary);
       line-height: 1.47059;
-      font-size: 17px;
+      font-size: 14px;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
     .app {
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
-      padding: 40px 20px;
+      padding: 28px 20px;
     }
 
     /* Header */
     .header {
       text-align: center;
-      margin-bottom: 60px;
+      margin-bottom: 28px;
     }
 
     .header h1 {
-      font-size: 48px;
+      font-size: 30px;
       font-weight: 700;
-      letter-spacing: -0.015em;
+      letter-spacing: -0.02em;
       color: var(--text-primary);
-      margin-bottom: 12px;
+      margin-bottom: 4px;
     }
 
     .header p {
-      font-size: 21px;
+      font-size: 15px;
       color: var(--text-secondary);
       font-weight: 400;
     }
@@ -67,20 +67,20 @@
     .header .status-line {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 20px;
-      padding: 8px 16px;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 5px 14px;
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border-radius: 20px;
-      font-size: 14px;
+      font-size: 12px;
       color: var(--text-secondary);
       border: 1px solid var(--border);
     }
 
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: var(--success);
       animation: pulse 2s ease-in-out infinite;
@@ -95,35 +95,36 @@
     .controls {
       display: flex;
       justify-content: center;
-      gap: 12px;
-      margin: 32px 0 48px;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 20px 0 24px;
     }
 
     .btn {
-      padding: 12px 24px;
+      padding: 7px 16px;
       border: none;
       border-radius: 980px;
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 500;
       font-family: var(--sf-pro);
       cursor: pointer;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       backdrop-filter: saturate(180%) blur(20px);
     }
 
     .btn-primary {
       background: var(--primary);
       color: white;
-      box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+      box-shadow: 0 1px 6px rgba(0, 122, 255, 0.25);
     }
 
     .btn-primary:hover {
       background: var(--primary-hover);
       transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(0, 122, 255, 0.4);
+      box-shadow: 0 3px 12px rgba(0, 122, 255, 0.35);
     }
 
     .btn-secondary {
@@ -143,51 +144,52 @@
     }
 
     .btn-sm {
-      padding: 6px 14px;
-      font-size: 13px;
+      padding: 4px 12px;
+      font-size: 12px;
     }
 
     /* Stats */
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-      margin-bottom: 48px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 24px;
     }
 
     .stat-card {
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 24px;
+      border-radius: 12px;
+      padding: 14px 16px;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .stat-card:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-lg);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
     }
 
     .stat-label {
-      font-size: 13px;
+      font-size: 11px;
       color: var(--text-secondary);
-      margin-bottom: 8px;
-      font-weight: 500;
-      letter-spacing: -0.01em;
+      margin-bottom: 4px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
     }
 
     .stat-value {
-      font-size: 48px;
+      font-size: 28px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      line-height: 1;
+      line-height: 1.1;
     }
 
     .stat-trend {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--success);
-      margin-top: 8px;
+      margin-top: 2px;
       font-weight: 500;
     }
 
@@ -203,11 +205,11 @@
 
     .region-card.active {
       border-color: var(--primary);
-      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
     }
 
     .region-card .stat-value {
-      font-size: 36px;
+      font-size: 22px;
     }
 
     .region-card .stat-trend {
@@ -219,13 +221,13 @@
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
     }
 
     .region-btn {
-      padding: 6px 12px;
-      font-size: 13px;
-      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
       background: var(--bg-elevated);
       border: 1px solid var(--border);
       color: var(--text-secondary);
@@ -248,31 +250,35 @@
     .region-badge {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px 8px;
-      border-radius: 6px;
-      font-size: 11px;
+      gap: 3px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
       font-weight: 600;
-      background: rgba(0, 122, 255, 0.1);
+      background: rgba(0, 122, 255, 0.08);
       color: var(--primary);
-      margin-left: 8px;
+      margin-left: 6px;
+      vertical-align: middle;
     }
 
     /* Nodes Grid */
     .nodes-grid {
       display: grid;
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 10px;
     }
 
     .node-card {
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 28px;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 12px;
+      padding: 14px 16px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
       overflow: hidden;
+      content-visibility: auto;
+      contain-intrinsic-size: 0 150px;
     }
 
     .node-card::before {
@@ -291,17 +297,17 @@
     .node-card.blacklisted::before { background: var(--text-primary); }
 
     .node-card:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-lg);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
       border-color: rgba(0, 0, 0, 0.1);
     }
 
     .node-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 24px;
-      gap: 16px;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
     }
 
     .node-info {
@@ -310,137 +316,129 @@
     }
 
     .node-name {
-      font-size: 21px;
-      font-weight: 700;
-      letter-spacing: -0.015em;
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
       color: var(--text-primary);
-      margin-bottom: 4px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      line-height: 1.3;
     }
 
     .node-tag {
-      font-size: 13px;
+      font-size: 11px;
       color: var(--text-secondary);
       font-family: "SF Mono", Menlo, Monaco, monospace;
       font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 1px;
     }
 
     .status-badge {
-      padding: 6px 14px;
-      border-radius: 12px;
-      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
       font-weight: 600;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       white-space: nowrap;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
     }
 
     .status-badge.healthy {
-      background: rgba(52, 199, 89, 0.15);
+      background: rgba(52, 199, 89, 0.12);
       color: #1f9b47;
     }
 
     .status-badge.warning {
-      background: rgba(255, 149, 0, 0.15);
+      background: rgba(255, 149, 0, 0.12);
       color: #c27100;
     }
 
     .status-badge.error {
-      background: rgba(255, 59, 48, 0.15);
+      background: rgba(255, 59, 48, 0.12);
       color: #d32f2f;
     }
 
     .status-badge.blacklisted {
-      background: rgba(29, 29, 31, 0.15);
+      background: rgba(29, 29, 31, 0.1);
       color: var(--text-primary);
     }
 
     .status-icon {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
       background: currentColor;
     }
 
-    /* Latency Display - Prominent */
-    .latency-display {
-      background: linear-gradient(135deg, rgba(0, 122, 255, 0.08), rgba(0, 122, 255, 0.03));
-      border: 1px solid rgba(0, 122, 255, 0.15);
-      border-radius: 16px;
-      padding: 20px 24px;
-      margin-bottom: 24px;
+    /* Compact inline metrics row */
+    .metrics-row {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      transition: all 0.3s;
+      gap: 0;
+      margin-bottom: 10px;
+      background: rgba(0, 0, 0, 0.02);
+      border-radius: 8px;
+      overflow: hidden;
     }
 
-    .latency-display:hover {
-      background: linear-gradient(135deg, rgba(0, 122, 255, 0.12), rgba(0, 122, 255, 0.05));
-      border-color: rgba(0, 122, 255, 0.25);
-    }
-
-    .latency-info {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .latency-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--primary), #0051d5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 24px;
-      font-weight: 700;
-    }
-
-    .latency-text {
+    .metrics-row .metric-cell {
       flex: 1;
+      padding: 8px 10px;
+      text-align: center;
+      position: relative;
     }
 
-    .latency-label {
-      font-size: 13px;
+    .metrics-row .metric-cell:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 20%;
+      height: 60%;
+      width: 1px;
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    .metrics-row .metric-cell .m-label {
+      font-size: 10px;
       color: var(--text-secondary);
-      margin-bottom: 4px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 2px;
     }
 
-    .latency-value {
-      font-size: 32px;
+    .metrics-row .metric-cell .m-value {
+      font-size: 15px;
       font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--primary);
-      line-height: 1;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      line-height: 1.2;
     }
 
-    .latency-quality {
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-top: 4px;
-      font-weight: 500;
-    }
+    .metrics-row .metric-cell .m-value.success { color: var(--success); }
+    .metrics-row .metric-cell .m-value.error { color: var(--error); }
+    .metrics-row .metric-cell .m-value.warning { color: var(--warning); }
+    .metrics-row .metric-cell .m-value.primary { color: var(--primary); }
+    .metrics-row .metric-cell .m-value.muted { color: var(--text-secondary); font-size: 12px; }
 
-    /* Metrics */
+    /* Legacy metrics grid (debug tab) */
     .metrics {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
     }
 
     .metric {
       background: rgba(0, 0, 0, 0.02);
-      border-radius: 12px;
-      padding: 16px;
+      border-radius: 8px;
+      padding: 8px 10px;
       transition: all 0.2s;
     }
 
@@ -449,16 +447,18 @@
     }
 
     .metric-label {
-      font-size: 12px;
+      font-size: 10px;
       color: var(--text-secondary);
-      margin-bottom: 6px;
+      margin-bottom: 2px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
     }
 
     .metric-value {
-      font-size: 24px;
+      font-size: 16px;
       font-weight: 700;
-      letter-spacing: -0.015em;
+      letter-spacing: -0.01em;
       color: var(--text-primary);
     }
 
@@ -466,37 +466,44 @@
     .metric-value.error { color: var(--error); }
     .metric-value.warning { color: var(--warning); }
 
-    /* Footer */
+    /* Node Footer */
     .node-footer {
-      padding-top: 20px;
-      border-top: 1px solid var(--border);
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
     }
 
     .time-info {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-secondary);
-      line-height: 1.6;
+      line-height: 1.5;
       flex: 1;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .time-info > div {
+      white-space: nowrap;
     }
 
     /* Toast */
     .toast {
       position: fixed;
-      top: 24px;
-      right: 24px;
+      top: 20px;
+      right: 20px;
       background: rgba(255, 255, 255, 0.95);
       backdrop-filter: saturate(180%) blur(20px);
       border: 1px solid var(--border);
-      padding: 16px 24px;
-      border-radius: 16px;
+      padding: 12px 18px;
+      border-radius: 12px;
       box-shadow: var(--shadow-lg);
       display: none;
       align-items: center;
-      gap: 12px;
-      max-width: 420px;
+      gap: 10px;
+      max-width: 380px;
       z-index: 1000;
       animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -519,30 +526,30 @@
 
     .toast-message {
       flex: 1;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
     }
 
     /* Empty State */
     .empty {
       text-align: center;
-      padding: 80px 40px;
+      padding: 48px 32px;
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border: 1px solid var(--border);
-      border-radius: 18px;
+      border-radius: 12px;
     }
 
     .empty h3 {
-      font-size: 21px;
+      font-size: 17px;
       color: var(--text-primary);
-      margin: 24px 0 12px;
+      margin: 16px 0 6px;
       font-weight: 700;
     }
 
     .empty p {
       color: var(--text-secondary);
-      font-size: 15px;
+      font-size: 13px;
     }
 
     /* Login Modal */
@@ -572,10 +579,10 @@
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 48px;
+      border-radius: 20px;
+      padding: 36px;
       box-shadow: var(--shadow-lg);
-      max-width: 420px;
+      max-width: 400px;
       width: 90%;
       animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -593,44 +600,44 @@
 
     .login-header {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
     }
 
     .login-header h2 {
-      font-size: 32px;
+      font-size: 24px;
       font-weight: 700;
       letter-spacing: -0.015em;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
 
     .login-header p {
       color: var(--text-secondary);
-      font-size: 15px;
+      font-size: 14px;
     }
 
     .login-form {
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 16px;
     }
 
     .form-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
 
     .form-label {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
       color: var(--text-primary);
     }
 
     .form-input {
-      padding: 14px 16px;
+      padding: 10px 14px;
       border: 1px solid var(--border);
-      border-radius: 12px;
-      font-size: 16px;
+      border-radius: 10px;
+      font-size: 14px;
       font-family: var(--sf-pro);
       background: rgba(255, 255, 255, 0.8);
       transition: all 0.2s;
@@ -643,15 +650,15 @@
     }
 
     .form-help {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-secondary);
-      margin-top: 4px;
+      margin-top: 2px;
     }
 
     .login-error {
       color: var(--error);
-      font-size: 13px;
-      margin-top: -12px;
+      font-size: 12px;
+      margin-top: -8px;
       display: none;
     }
 
@@ -661,15 +668,15 @@
     .tabs {
       display: flex;
       justify-content: center;
-      gap: 8px;
-      margin-bottom: 32px;
+      gap: 6px;
+      margin-bottom: 20px;
     }
 
     .tab {
-      padding: 12px 24px;
+      padding: 7px 18px;
       border: none;
       border-radius: 980px;
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 500;
       font-family: var(--sf-pro);
       cursor: pointer;
@@ -701,37 +708,37 @@
     /* Node Management */
     .manage-header {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 20px;
     }
 
     .manage-header h2 {
-      font-size: 28px;
+      font-size: 22px;
       font-weight: 700;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
 
     .manage-desc {
       color: var(--text-secondary);
-      font-size: 15px;
+      font-size: 13px;
     }
 
     .manage-actions {
       display: flex;
       justify-content: center;
-      gap: 12px;
-      margin-bottom: 16px;
+      gap: 8px;
+      margin-bottom: 12px;
     }
 
     .btn-warning {
       background: var(--warning);
       color: white;
-      box-shadow: 0 2px 8px rgba(255, 149, 0, 0.3);
+      box-shadow: 0 1px 6px rgba(255, 149, 0, 0.25);
     }
 
     .btn-warning:hover {
       background: #e68600;
       transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(255, 149, 0, 0.4);
+      box-shadow: 0 3px 12px rgba(255, 149, 0, 0.35);
     }
 
     .btn-danger {
@@ -745,36 +752,37 @@
 
     .reload-warning {
       text-align: center;
-      padding: 12px 20px;
-      background: rgba(255, 149, 0, 0.1);
-      border: 1px solid rgba(255, 149, 0, 0.3);
-      border-radius: 12px;
+      padding: 8px 16px;
+      background: rgba(255, 149, 0, 0.08);
+      border: 1px solid rgba(255, 149, 0, 0.2);
+      border-radius: 8px;
       color: var(--warning);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
-      margin-bottom: 32px;
+      margin-bottom: 20px;
     }
 
     .config-nodes-grid {
       display: grid;
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 10px;
     }
 
     .config-node-card {
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 24px;
+      border-radius: 12px;
+      padding: 14px 16px;
       display: flex;
       align-items: center;
-      gap: 20px;
-      transition: all 0.3s;
+      gap: 12px;
+      transition: all 0.25s;
     }
 
     .config-node-card:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-lg);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
     }
 
     .config-node-info {
@@ -783,37 +791,38 @@
     }
 
     .config-node-name {
-      font-size: 18px;
+      font-size: 14px;
       font-weight: 600;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
 
     .config-node-uri {
-      font-size: 13px;
+      font-size: 11px;
       color: var(--text-secondary);
       font-family: "SF Mono", Menlo, Monaco, monospace;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 500px;
+      max-width: 400px;
     }
 
     .config-node-port {
-      font-size: 14px;
+      font-size: 12px;
       color: var(--primary);
       font-weight: 500;
-      margin-top: 4px;
+      margin-top: 2px;
     }
 
     .config-node-actions {
       display: flex;
-      gap: 8px;
+      gap: 6px;
+      flex-shrink: 0;
     }
 
     .modal-buttons {
       display: flex;
-      gap: 12px;
-      margin-top: 8px;
+      gap: 10px;
+      margin-top: 4px;
     }
 
     .modal-buttons .btn {
@@ -824,8 +833,8 @@
     .toggle-switch {
       position: relative;
       display: inline-block;
-      width: 50px;
-      height: 28px;
+      width: 44px;
+      height: 24px;
       flex-shrink: 0;
     }
 
@@ -844,20 +853,20 @@
       bottom: 0;
       background-color: #ccc;
       transition: 0.3s;
-      border-radius: 28px;
+      border-radius: 24px;
     }
 
     .toggle-slider:before {
       position: absolute;
       content: "";
-      height: 22px;
-      width: 22px;
+      height: 18px;
+      width: 18px;
       left: 3px;
       bottom: 3px;
       background-color: white;
       transition: 0.3s;
       border-radius: 50%;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
 
     .toggle-switch input:checked + .toggle-slider {
@@ -865,7 +874,7 @@
     }
 
     .toggle-switch input:checked + .toggle-slider:before {
-      transform: translateX(22px);
+      transform: translateX(20px);
     }
 
     /* Probe Progress */
@@ -877,7 +886,7 @@
       background: var(--bg-elevated);
       backdrop-filter: saturate(180%) blur(20px);
       border-bottom: 1px solid var(--border);
-      padding: 16px 24px;
+      padding: 12px 20px;
       z-index: 1500;
       display: none;
       animation: slideDown 0.3s ease;
@@ -894,41 +903,41 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .probe-progress-title {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 600;
       color: var(--text-primary);
     }
 
     .probe-progress-stats {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text-secondary);
     }
 
     .probe-progress-bar {
-      height: 6px;
-      background: rgba(0, 0, 0, 0.1);
-      border-radius: 3px;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 2px;
       overflow: hidden;
     }
 
     .probe-progress-fill {
       height: 100%;
       background: linear-gradient(90deg, var(--primary), var(--success));
-      border-radius: 3px;
+      border-radius: 2px;
       transition: width 0.3s ease;
       width: 0%;
     }
 
     .probe-progress-detail {
-      margin-top: 8px;
-      font-size: 12px;
+      margin-top: 6px;
+      font-size: 11px;
       color: var(--text-secondary);
       display: flex;
-      gap: 16px;
+      gap: 12px;
     }
 
     .probe-progress-detail .success { color: var(--success); }
@@ -936,19 +945,28 @@
 
     /* Responsive */
     @media (max-width: 768px) {
-      .app { padding: 24px 16px; }
-      .header h1 { font-size: 36px; }
-      .header p { font-size: 17px; }
+      .app { padding: 16px 12px; }
+      .header h1 { font-size: 24px; }
+      .header p { font-size: 14px; }
       .stats { grid-template-columns: repeat(2, 1fr); }
+      .nodes-grid { grid-template-columns: 1fr; }
+      .config-nodes-grid { grid-template-columns: 1fr; }
       .metrics { grid-template-columns: repeat(2, 1fr); }
       .controls { flex-direction: column; }
       .btn { width: 100%; justify-content: center; }
-      .login-modal { padding: 32px 24px; }
+      .login-modal { padding: 28px 20px; }
       .tabs { flex-direction: column; }
       .tab { width: 100%; }
       .manage-actions { flex-direction: column; }
       .config-node-card { flex-direction: column; align-items: stretch; }
       .config-node-actions { justify-content: flex-end; }
+      .time-info { flex-direction: column; gap: 2px; }
+    }
+
+    @media (min-width: 1200px) {
+      .nodes-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
     }
   </style>
 </head>
@@ -957,13 +975,13 @@
     <header class="header">
       <h1>Easy Proxies</h1>
       <p>节点监控中心</p>
-      <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 20px;">
+      <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px;">
         <div class="status-line" style="margin-top: 0;">
           <span class="status-dot"></span>
           <span id="lastUpdate">正在加载...</span>
         </div>
-        <button class="btn btn-secondary" onclick="showSettingsModal()" style="padding: 0; border-radius: 50%; width: 36px; height: 36px; min-width: 36px; display: flex; align-items: center; justify-content: center;" title="系统设置">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button class="btn btn-secondary" onclick="showSettingsModal()" style="padding: 0; border-radius: 50%; width: 30px; height: 30px; min-width: 30px; display: flex; align-items: center; justify-content: center;" title="系统设置">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
@@ -982,7 +1000,7 @@
     <div id="monitorTab" class="tab-content active">
     <div class="controls">
       <button class="btn btn-primary" onclick="refresh()">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M13.65 2.35A7.958 7.958 0 0 0 8 0C3.58 0 0 3.58 0 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" fill="currentColor"/>
         </svg>
         刷新数据
@@ -994,13 +1012,13 @@
         <span id="autoRefreshText">关闭自动刷新</span>
       </button>
       <button class="btn btn-secondary" onclick="exportNodes()">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M8 0L8 10M8 10L5 7M8 10L11 7M2 13h12v3H2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         导出节点
       </button>
       <button class="btn btn-secondary" id="refreshSubBtn" onclick="refreshSubscription()" style="display: none;">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M13.65 2.35A7.958 7.958 0 0 0 8 0C3.58 0 0 3.58 0 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" fill="currentColor"/>
         </svg>
         <span id="refreshSubText">刷新订阅</span>
@@ -1026,7 +1044,7 @@
       </div>
       <div class="stat-card" id="subscriptionCard" style="display: none;">
         <div class="stat-label">订阅状态</div>
-        <div class="stat-value" style="font-size: 24px;" id="subscriptionStatus">-</div>
+        <div class="stat-value" style="font-size: 20px;" id="subscriptionStatus">-</div>
         <div class="stat-trend" id="subscriptionTrend">未启用</div>
       </div>
     </div>
@@ -1066,8 +1084,8 @@
     </div>
 
     <!-- Region Filter -->
-    <div class="region-filter" id="regionFilter" style="display: none; margin-bottom: 16px;">
-      <span style="margin-right: 8px; color: var(--text-secondary);">筛选地域:</span>
+    <div class="region-filter" id="regionFilter" style="display: none; margin-bottom: 12px;">
+      <span style="margin-right: 6px; color: var(--text-secondary); font-size: 12px;">筛选地域:</span>
       <button class="btn btn-sm region-btn active" data-region="all" onclick="filterByRegion('all')">全部</button>
       <button class="btn btn-sm region-btn" data-region="jp" onclick="filterByRegion('jp')">🇯🇵 JP</button>
       <button class="btn btn-sm region-btn" data-region="kr" onclick="filterByRegion('kr')">🇰🇷 KR</button>
@@ -1080,7 +1098,7 @@
     <div id="nodesContainer" class="nodes-grid"></div>
 
     <div id="emptyState" class="empty" style="display: none;">
-      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" opacity="0.2">
+      <svg width="48" height="48" viewBox="0 0 64 64" fill="none" opacity="0.2">
         <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="4"/>
         <path d="M32 16v32M16 32h32" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
       </svg>
@@ -1098,13 +1116,13 @@
 
       <div class="manage-actions">
         <button class="btn btn-primary" onclick="showAddNodeModal()">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
           添加节点
         </button>
         <button class="btn btn-warning" onclick="triggerReload()" id="reloadBtn">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M13.65 2.35A7.958 7.958 0 0 0 8 0C3.58 0 0 3.58 0 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" fill="currentColor"/>
           </svg>
           重载配置
@@ -1115,14 +1133,14 @@
         ⚠️ 重载配置会中断所有现有连接，请谨慎操作
       </div>
 
-      <div id="subscriptionWarning" class="reload-warning" style="display: none; background: rgba(255, 59, 48, 0.1); border-color: rgba(255, 59, 48, 0.3); color: var(--error);">
+      <div id="subscriptionWarning" class="reload-warning" style="display: none; background: rgba(255, 59, 48, 0.08); border-color: rgba(255, 59, 48, 0.2); color: var(--error);">
         ⚠️ 当前使用订阅模式：您的修改会保存到 nodes.txt，但下次刷新订阅时将被覆盖
       </div>
 
       <div id="configNodesContainer" class="config-nodes-grid"></div>
 
       <div id="configEmptyState" class="empty" style="display: none;">
-        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" opacity="0.2">
+        <svg width="48" height="48" viewBox="0 0 64 64" fill="none" opacity="0.2">
           <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="4"/>
           <path d="M32 16v32M16 32h32" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
         </svg>
@@ -1156,7 +1174,7 @@
       <div id="debugNodesContainer" class="nodes-grid"></div>
 
       <div id="debugEmptyState" class="empty" style="display: none;">
-        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" opacity="0.2">
+        <svg width="48" height="48" viewBox="0 0 64 64" fill="none" opacity="0.2">
           <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="4"/>
           <path d="M32 16v32M16 32h32" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
         </svg>
@@ -1544,12 +1562,15 @@
         const region = node.region || 'other';
         const regionBadge = node.region ? `<span class="region-badge">${getRegionEmoji(region)} ${getRegionName(region)}</span>` : '';
 
+        const latencyDisplay = latency >= 0 ? latency + 'ms' : '--';
+        const latencyClass = latency < 0 ? 'muted' : (latency < 100 ? 'success' : (latency < 200 ? 'primary' : (latency < 500 ? 'warning' : 'error')));
+
         return `
           <div class="node-card ${status}" data-region="${region}">
             <div class="node-header">
               <div class="node-info">
-                <div class="node-name">${node.name || node.tag}${regionBadge}</div>
-                <div class="node-tag">${node.tag}${node.country ? ` · ${node.country}` : ''}</div>
+                <div class="node-name">${escapeHtml(node.name || node.tag)}${regionBadge}</div>
+                <div class="node-tag">${escapeHtml(node.tag)}${node.country ? ` · ${escapeHtml(node.country)}` : ''}</div>
               </div>
               <span class="status-badge ${status}">
                 <span class="status-icon"></span>
@@ -1557,49 +1578,40 @@
               </span>
             </div>
 
-            <div class="latency-display">
-              <div class="latency-info">
-                <div class="latency-icon">⚡</div>
-                <div class="latency-text">
-                  <div class="latency-label">节点延迟</div>
-                  <div class="latency-value">${latency >= 0 ? latency : '—'}</div>
-                  ${latency >= 0 ? `<div class="latency-quality" style="color: ${quality.color}">${quality.text} · ${latency} ms</div>` : '<div class="latency-quality">点击探测按钮测试延迟</div>'}
-                </div>
+            <div class="metrics-row">
+              <div class="metric-cell">
+                <div class="m-label">端口</div>
+                <div class="m-value">${node.port || '--'}</div>
               </div>
-            </div>
-
-            <div class="metrics">
-              <div class="metric">
-                <div class="metric-label">监听端口</div>
-                <div class="metric-value">${node.port || '—'}</div>
+              <div class="metric-cell">
+                <div class="m-label">延迟</div>
+                <div class="m-value ${latencyClass}">${latencyDisplay}</div>
               </div>
-              <div class="metric">
-                <div class="metric-label">活跃连接</div>
-                <div class="metric-value success">${node.active_connections || 0}</div>
+              <div class="metric-cell">
+                <div class="m-label">连接</div>
+                <div class="m-value success">${node.active_connections || 0}</div>
               </div>
-              <div class="metric">
-                <div class="metric-label">失败次数</div>
-                <div class="metric-value ${node.failure_count > 0 ? 'error' : ''}">${node.failure_count || 0}</div>
+              <div class="metric-cell">
+                <div class="m-label">失败</div>
+                <div class="m-value ${node.failure_count > 0 ? 'error' : ''}">${node.failure_count || 0}</div>
               </div>
-              <div class="metric">
-                <div class="metric-label">运行模式</div>
-                <div class="metric-value" style="font-size: 16px; text-transform: uppercase;">${node.mode || '—'}</div>
+              <div class="metric-cell">
+                <div class="m-label">模式</div>
+                <div class="m-value muted">${node.mode || '--'}</div>
               </div>
-            </div>
-
-            <div class="time-info">
-              <div>✓ 最近成功: ${formatTime(node.last_success)}</div>
-              <div>✗ 最近失败: ${formatTime(node.last_failure)}</div>
-              ${node.blacklisted ? `<div style="color: var(--error);">⚠ 拉黑至: ${new Date(node.blacklisted_until).toLocaleString('zh-CN')}</div>` : ''}
             </div>
 
             <div class="node-footer">
-              <div style="flex: 1;"></div>
-              <button class="btn btn-secondary btn-sm" onclick="probe('${node.tag}')">
-                🔍 探测延迟
+              <div class="time-info">
+                <div>✓ ${formatTime(node.last_success)}</div>
+                <div>✗ ${formatTime(node.last_failure)}</div>
+                ${node.blacklisted ? `<div style="color: var(--error);">⚠ 拉黑至 ${new Date(node.blacklisted_until).toLocaleString('zh-CN')}</div>` : ''}
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="probe('${escapeHtml(node.tag)}')">
+                🔍 探测
               </button>
               ${node.blacklisted ? `
-                <button class="btn btn-primary btn-sm" onclick="release('${node.tag}')">
+                <button class="btn btn-primary btn-sm" onclick="release('${escapeHtml(node.tag)}')">
                   解除拉黑
                 </button>
               ` : ''}
@@ -1716,6 +1728,9 @@
           break;
         case 'complete':
           progressFill.style.width = '100%';
+          progressStats.textContent = `${data.total} / ${data.total}`;
+          successCountEl.textContent = data.success;
+          failedCountEl.textContent = data.failed;
           currentNode.textContent = `完成！成功 ${data.success}，失败 ${data.failed}`;
           showToast(`探测完成！成功 ${data.success} 个，失败 ${data.failed} 个`, 'success');
           break;
@@ -1753,7 +1768,11 @@
 
     function startAutoRefresh() {
       if (autoRefreshInterval) return;
-      autoRefreshInterval = setInterval(refresh, 10000);
+      autoRefreshInterval = setInterval(() => {
+        if (document.hidden) return;
+        if (!document.getElementById('monitorTab').classList.contains('active')) return;
+        refresh();
+      }, 10000);
     }
 
     function stopAutoRefresh() {
@@ -1914,42 +1933,42 @@
             }
           } catch (e) {}
           const title = `${time} - ${t.success ? '成功' : '失败'}${t.latency_ms > 0 ? ' (' + t.latency_ms + 'ms)' : ''}${t.error ? ' - ' + t.error : ''}`;
-          return `<div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;" title="${escapeHtml(title)}"></div>`;
-        }).join('') : '<span style="font-size:12px;color:var(--text-secondary);">暂无最近记录</span>';
+          return `<div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;" title="${escapeHtml(title)}"></div>`;
+        }).join('') : '<span style="font-size:11px;color:var(--text-secondary);">暂无最近记录</span>';
 
         return `
           <div class="node-card">
-            <div class="node-header" style="margin-bottom:16px;">
+            <div class="node-header" style="margin-bottom:8px;">
               <div class="node-info">
                 <div class="node-name">${escapeHtml(node.name || node.tag)}</div>
                 <div class="node-tag">${escapeHtml(node.tag)}</div>
               </div>
               <div style="text-align:right;">
-                <div style="font-size:32px;font-weight:700;color:${rateColor};">${successRate.toFixed(1)}%</div>
-                <div style="font-size:12px;color:var(--text-secondary);">共 ${calls} 次调用</div>
+                <div style="font-size:22px;font-weight:700;color:${rateColor};line-height:1;">${successRate.toFixed(1)}%</div>
+                <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;">共 ${calls} 次</div>
               </div>
             </div>
-            <div class="metrics" style="margin-bottom:16px;">
+            <div class="metrics" style="margin-bottom:8px;">
               <div class="metric">
-                <div class="metric-label">成功次数</div>
+                <div class="metric-label">成功</div>
                 <div class="metric-value success">${node.success_count || 0}</div>
               </div>
               <div class="metric">
-                <div class="metric-label">失败次数</div>
+                <div class="metric-label">失败</div>
                 <div class="metric-value ${node.failure_count > 0 ? 'error' : ''}">${node.failure_count || 0}</div>
               </div>
               <div class="metric">
-                <div class="metric-label">活跃连接</div>
+                <div class="metric-label">连接</div>
                 <div class="metric-value">${node.active_connections || 0}</div>
               </div>
               <div class="metric">
-                <div class="metric-label">最近延迟</div>
-                <div class="metric-value">${node.last_latency_ms >= 0 ? node.last_latency_ms + 'ms' : '—'}</div>
+                <div class="metric-label">延迟</div>
+                <div class="metric-value">${node.last_latency_ms >= 0 ? node.last_latency_ms + 'ms' : '--'}</div>
               </div>
             </div>
-            <div style="background:rgba(0,0,0,0.03);padding:12px 16px;border-radius:12px;">
-              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">最近 ${timeline.length} 次调用</div>
-              <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+            <div style="background:rgba(0,0,0,0.02);padding:8px 10px;border-radius:8px;">
+              <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.02em;font-weight:500;">最近 ${timeline.length} 次调用</div>
+              <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;">
                 ${timelineHtml}
               </div>
             </div>
@@ -2251,7 +2270,7 @@
       } finally {
         btn.disabled = false;
         btn.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M13.65 2.35A7.958 7.958 0 0 0 8 0C3.58 0 0 3.58 0 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" fill="currentColor"/>
           </svg>
           重载配置

@@ -2,125 +2,55 @@
 
 [English](README.md) | 简体中文
 
-基于 [sing-box](https://github.com/SagerNet/sing-box) 的代理节点池管理工具，支持多协议、多节点自动故障转移和负载均衡。
+Easy Proxies 是一个基于 sing-box 的代理池管理工具。
 
-## 特性
+目标是把大量上游节点统一成稳定的本地 HTTP 代理入口，同时支持按节点独立端口访问。
 
-### 核心功能
-- **多协议支持**: VMess、VLESS、Hysteria2 (hy2://)、Shadowsocks、Trojan
-- **多种传输层**: TCP、WebSocket、HTTP/2、gRPC、HTTPUpgrade
-- **订阅链接支持**: 自动从订阅链接获取节点，支持 Base64、Clash YAML 等格式
-- **订阅定时刷新**: 自动定时刷新订阅，支持 WebUI 手动触发（⚠️ 刷新会导致连接中断）
-- **节点池模式**: 自动故障转移、负载均衡
-  - **GeoIP 地域路由** ⭐（可选功能）: 通过 URL 路径访问特定地域的节点池
-    - `/jp` - 日本节点，`/kr` - 韩国节点，`/us` - 美国节点等
-    - 首次启动自动下载 GeoIP 数据库
-    - 自动定期更新（可配置间隔，默认 24 小时）
-    - 热重载，无需服务中断
-- **多端口模式**: 每个节点独立监听端口
-- **混合模式**: 同时启用节点池 + 多端口，节点状态共享同步
+## 当前能力
 
-### 管理与监控
-- **Web 监控面板**: 实时查看节点状态、延迟探测、一键导出节点
-- **WebUI 设置**: 无需编辑配置文件即可修改 external_ip 和 probe_target
-- **自动健康检查**: 启动时自动检测所有节点可用性，定期（5分钟）检查节点状态
-- **智能节点过滤**: 自动过滤不可用节点，WebUI 和导出按延迟排序
-- **端口保留**: 添加/更新节点时，已有节点保持原有端口不变
-
-### 安全与性能（新增！）
-- **增强会话管理**: 安全的会话令牌，自动过期和清理机制
-- **时序攻击防护**: 恒定时间密码比较，防止暴力破解攻击
-- **并发控制**: 基于信号量的 goroutine 限制，防止资源耗尽
-- **文件锁定**: 使用 syscall.Flock 确保配置文件并发写入安全
-- **解析优化**: 订阅内容解析速度提升 50-70%
-- **HTTP 连接池**: 高效的连接复用，减少 TIME_WAIT 连接
-- **优雅关闭**: 正确的连接排空机制，可配置超时时间
-
-### 部署
-- **灵活配置**: 支持配置文件、节点文件、订阅链接多种方式
-- **多架构支持**: Docker 镜像同时支持 AMD64 和 ARM64
-- **密码保护**: WebUI 支持密码认证，安全的会话管理
+- 运行模式：`pool`、`multi-port`、`hybrid`。
+- 实际构建的上游协议：`vmess`、`vless`、`trojan`、`ss/shadowsocks`、`hysteria2/hy2`、`socks5/socks`、`http/https`。
+- 节点来源：
+  - `config.yaml` 的 `nodes`
+  - `nodes_file`（每行一个 URI）
+  - `subscriptions`（支持 Base64/纯文本/Clash YAML 解析）
+- 自动健康检查、失败熔断和黑名单恢复。
+- Web 管理面板 + API：
+  - 节点状态/探测/导出
+  - 动态设置（`external_ip`、`probe_target`、`skip_cert_verify`）
+  - 节点配置增删改查 + 重载
+  - 订阅状态查询 + 手动刷新
+- 新增可配置 DNS 解析器（对 VMess 域名节点非常关键）。
+- 可选 GeoIP 标记（在面板中展示 region/country 统计与筛选，仅 pool 模式可用，支持自动更新和热重载）。
 
 ## 快速开始
 
-### 1. 配置
-
-复制示例配置文件：
+### 1）准备配置
 
 ```bash
 cp config.example.yaml config.yaml
 cp nodes.example nodes.txt
 ```
 
-编辑 `config.yaml` 配置监听地址和认证信息，编辑 `nodes.txt` 添加代理节点。
+编辑 `config.yaml`，并配置节点来源（`nodes.txt` / `subscriptions` / `nodes`）。
 
-### 2. 运行
+### 2）启动
 
-**Docker 方式（推荐）：**
+Docker：
 
 ```bash
 ./start.sh
-```
-
-或手动执行：
-
-```bash
+# 或
 docker compose up -d
 ```
 
-**本地编译运行：**
+本地运行：
 
 ```bash
-go build -tags "with_utls with_quic with_grpc" -o easy-proxies ./cmd/easy_proxies
-./easy-proxies --config config.yaml
+go run ./cmd/easy_proxies -config config.yaml
 ```
 
-## 配置说明
-
-### 基础配置
-
-```yaml
-mode: pool                    # 运行模式: pool (节点池)、multi-port (多端口) 或 hybrid (混合)
-log_level: info               # 日志级别: debug, info, warn, error
-external_ip: ""               # 外部 IP 地址，用于导出时替换 0.0.0.0（Docker 部署时建议配置）
-
-# 订阅链接（可选，支持多个）
-subscriptions:
-  - "https://example.com/subscribe"
-
-# 管理接口
-management:
-  enabled: true
-  listen: 0.0.0.0:9090        # Web 监控面板地址
-  probe_target: www.apple.com:80  # 延迟探测目标
-  password: ""                # WebUI 访问密码，为空则不需要密码（可选）
-
-# 统一入口监听
-listener:
-  address: 0.0.0.0
-  port: 2323
-  username: username
-  password: password
-
-# 节点池配置
-pool:
-  mode: sequential            # sequential (顺序) 或 random (随机)
-  failure_threshold: 3        # 失败阈值，超过后拉黑节点
-  blacklist_duration: 24h     # 拉黑时长
-
-# 多端口模式
-multi_port:
-  address: 0.0.0.0
-  base_port: 24000            # 起始端口，节点依次递增
-  username: mpuser
-  password: mppass
-```
-
-### 运行模式详解
-
-#### Pool 模式（节点池）
-
-所有节点共享一个入口地址，程序自动选择可用节点：
+## 最小配置示例（Pool）
 
 ```yaml
 mode: pool
@@ -132,460 +62,100 @@ listener:
   password: pass
 
 pool:
-  mode: sequential  # sequential (顺序) 或 random (随机)
+  mode: sequential    # sequential / random / balance
   failure_threshold: 3
   blacklist_duration: 24h
-```
 
-**适用场景：** 自动故障转移、负载均衡
+management:
+  enabled: true
+  listen: 0.0.0.0:9091
+  probe_target: http://cp.cloudflare.com/generate_204
+  password: ""
 
-**使用方式：** 配置代理为 `http://user:pass@localhost:2323`
+dns:
+  server: 223.5.5.5
+  port: 53
+  strategy: prefer_ipv4
 
-#### Multi-Port 模式（多端口）
-
-每个节点独立监听一个端口，精确控制使用哪个节点：
-
-**配置格式：** 支持两种写法
-
-```yaml
-mode: multi-port  # 推荐：连字符格式
-# 或
-mode: multi_port  # 兼容：下划线格式
-```
-
-**完整配置示例：**
-
-```yaml
-mode: multi-port
-
-multi_port:
-  address: 0.0.0.0
-  base_port: 24000  # 端口从这里开始自动递增
-  username: user
-  password: pass
-
-# 使用 nodes_file 简化配置
 nodes_file: nodes.txt
 ```
 
-**启动时输出：**
+## DNS 配置说明
 
-```
-📡 Proxy Links:
-═══════════════════════════════════════════════════════════════
-🔌 Multi-Port Mode (3 nodes):
-
-   [24000] 台湾节点
-       http://user:pass@0.0.0.0:24000
-   [24001] 香港节点
-       http://user:pass@0.0.0.0:24001
-   [24002] 美国节点
-       http://user:pass@0.0.0.0:24002
-═══════════════════════════════════════════════════════════════
-```
-
-**适用场景：** 需要指定特定节点、测试节点性能
-
-**使用方式：** 每个节点有独立的代理地址，可精确选择
-
-#### Hybrid 模式（混合模式）
-
-同时启用节点池和多端口模式，两者共享节点状态：
+`dns` 会同时影响 sing-box DNS 客户端和 VMess 域名拨号解析：
 
 ```yaml
-mode: hybrid
-
-listener:
-  address: 0.0.0.0
-  port: 2323           # 节点池入口
-  username: user
-  password: pass
-
-multi_port:
-  address: 0.0.0.0
-  base_port: 24000     # 多端口起始端口
-  username: mpuser
-  password: mppass
-
-pool:
-  mode: balance        # sequential (顺序)、random (随机) 或 balance (负载均衡)
-  failure_threshold: 3
-  blacklist_duration: 24h
+dns:
+  server: 223.5.5.5
+  fallback_servers:    # 备用 DNS 服务器（主 DNS 解析失败时使用）
+    - 8.8.8.8
+    - 1.1.1.1
+  port: 53
+  strategy: prefer_ipv4
 ```
 
-**启动时输出：**
+`strategy` 可选值：
 
-```
-📡 Proxy Links:
-═══════════════════════════════════════════════════════════════
-🌐 Pool Entry Point:
-   http://user:pass@0.0.0.0:2323
+- `as_is`
+- `prefer_ipv4`
+- `prefer_ipv6`
+- `ipv4_only`
+- `ipv6_only`
 
-   Nodes in pool (3):
-   • 台湾节点
-   • 香港节点
-   • 美国节点
+如果日志中出现 `lookup <domain>: empty result`，请优先检查该 DNS 配置是否可达且策略合理。
 
-🔌 Multi-Port Entry Points (3 nodes):
+## 运行模式
 
-   [24000] 台湾节点
-       http://mpuser:mppass@0.0.0.0:24000
-   [24001] 香港节点
-       http://mpuser:mppass@0.0.0.0:24001
-   [24002] 美国节点
-       http://mpuser:mppass@0.0.0.0:24002
-═══════════════════════════════════════════════════════════════
-```
+- `pool`：所有节点共享一个本地 HTTP 入口。
+- `multi-port`：每个节点一个独立本地端口。
+- `hybrid`：同时启用 pool + multi-port。
 
-**核心特性：**
+## 节点来源行为
 
-- **状态共享**: 节点黑名单状态在节点池和多端口之间同步
-  - 节点池中某节点失败被拉黑，多端口模式也会同步标记为不可用
-  - 健康检查结果同时更新两种模式
-- **端口自动重分配**: 如果端口被占用，自动分配下一个可用端口
-- **灵活访问**: 节点池用于负载均衡，多端口用于直连特定节点
+- 配置了 `subscriptions` 时：
+  - 会抓取订阅节点并追加到运行节点列表
+  - `nodes_file` 作为订阅节点写入路径
+  - 启动阶段不再从 `nodes_file` 读取节点
+- `nodes`（内联节点）只要存在就会参与运行。
 
-**适用场景：** 既需要自动故障转移，又需要直连特定节点
+## 协议支持注意事项
 
-### 节点配置
+运行时真正支持的协议：
 
-**方式 1: 使用订阅链接（推荐）**
+- `vmess`
+- `vless`
+- `trojan`
+- `ss` / `shadowsocks`
+- `hysteria2` / `hy2`
+- `socks5` / `socks`
+- `http` / `https`
 
-支持从订阅链接自动获取节点，支持多种格式：
+订阅解析阶段可能识别到更多 URI 前缀（兼容输入），但不在上述列表中的协议会在构建阶段被跳过。
 
-```yaml
-subscriptions:
-  - "https://example.com/subscribe/v2ray"
-  - "https://example.com/subscribe/clash"
-```
+## 管理 API（核心）
 
-支持的订阅格式：
-- **Base64 编码**: V2Ray 标准订阅格式
-- **Clash YAML**: Clash 配置文件格式
-- **纯文本**: 每行一个节点 URI
+- `POST /api/auth`
+- `GET|PUT /api/settings`
+- `GET /api/nodes`
+- `POST /api/nodes/{tag}/probe`
+- `POST /api/nodes/{tag}/release`
+- `POST /api/nodes/probe-all`（SSE）
+- `GET /api/export`
+- `GET|POST /api/subscription/status|refresh`
+- `GET|POST|PUT|DELETE /api/nodes/config[...]`
+- `POST /api/reload`
 
-**方式 2: 使用节点文件**
+`management.password` 为空时，Web/API 不要求登录。
 
-在 `config.yaml` 中指定：
+## 重要运行说明
 
-```yaml
-nodes_file: nodes.txt
-```
+- 重载（`/api/reload` 或订阅刷新）会中断现有连接。
+- Settings API 会把配置写回 `config.yaml`；部分设置需要重载后才能完全生效。
+- 省略项默认值可在 `internal/config/config.go` 中查看。
 
-`nodes.txt` 每行一个节点 URI：
-
-```
-vless://uuid@server:443?security=reality&sni=example.com#节点名称
-hysteria2://password@server:443?sni=example.com#HY2节点
-ss://base64@server:8388#SS节点
-trojan://password@server:443?sni=example.com#Trojan节点
-vmess://base64...#VMess节点
-```
-
-**方式 3: 直接在配置文件中**
-
-```yaml
-nodes:
-  - uri: "vless://uuid@server:443#节点1"
-  - name: custom-name
-    uri: "ss://base64@server:8388"
-    port: 24001  # 可选，手动指定端口
-```
-
-> **提示**: 可以同时使用多种方式，节点会自动合并。
-
-## 支持的协议
-
-| 协议 | URI 格式 | 特性 |
-|------|----------|------|
-| VMess | `vmess://` | WebSocket、HTTP/2、gRPC、TLS |
-| VLESS | `vless://` | Reality、XTLS-Vision、多传输层 |
-| Hysteria2 | `hysteria2://` 或 `hy2://` | 带宽控制、混淆 |
-| Shadowsocks | `ss://` | 多加密方式 |
-| Trojan | `trojan://` | TLS、多传输层 |
-
-### VMess 参数
-
-VMess 支持两种 URI 格式：
-
-**格式一：Base64 JSON（标准格式）**
-```
-vmess://base64({"v":"2","ps":"名称","add":"server","port":443,"id":"uuid","aid":0,"scy":"auto","net":"ws","type":"","host":"example.com","path":"/path","tls":"tls","sni":"example.com"})
-```
-
-**格式二：URL 格式**
-```
-vmess://uuid@server:port?encryption=auto&security=tls&sni=example.com&type=ws&host=example.com&path=/path#名称
-```
-
-- `net/type`: tcp, ws, h2, grpc
-- `tls/security`: tls 或空
-- `scy/encryption`: auto, aes-128-gcm, chacha20-poly1305 等
-
-### VLESS 参数
-
-```
-vless://uuid@server:port?encryption=none&security=reality&sni=example.com&fp=chrome&pbk=xxx&sid=xxx&type=tcp&flow=xtls-rprx-vision#名称
-```
-
-- `security`: none, tls, reality
-- `type`: tcp, ws, http, grpc, httpupgrade
-- `flow`: xtls-rprx-vision (仅 TCP)
-- `fp`: 指纹 (chrome, firefox, safari 等)
-
-### Hysteria2 参数
-
-```
-hysteria2://password@server:port?sni=example.com&insecure=0&obfs=salamander&obfs-password=xxx#名称
-# 或使用简写
-hy2://password@server:port?sni=example.com&insecure=0&obfs=salamander&obfs-password=xxx#名称
-```
-
-- `upMbps` / `downMbps`: 带宽限制
-- `obfs`: 混淆类型
-- `obfs-password`: 混淆密码
-
-## Web 监控面板
-
-访问 `http://localhost:9090` 查看：
-
-- 节点状态（健康/警告/异常/拉黑）
-- 实时延迟
-- 活跃连接数
-- 失败次数统计
-- 手动探测延迟
-- 解除节点拉黑
-- **一键导出节点**: 导出所有可用节点的代理池 URI（格式：`http://user:pass@host:port`）
-- **设置**: 点击齿轮图标修改 `external_ip` 和 `probe_target`（立即保存生效）
-
-### WebUI 设置
-
-点击页面顶部的 ⚙️ 齿轮图标进入设置：
-
-| 设置项 | 说明 |
-|--------|------|
-| 外部 IP 地址 | 导出节点时使用的 IP 地址（替换 `0.0.0.0`） |
-| 探测目标 | 健康检查目标地址（格式：`host:port`） |
-
-修改后立即保存到 `config.yaml`，无需重启即可生效。
-
-### 节点管理
-
-Web UI 提供**节点管理** Tab 页，支持节点的增删改查操作：
-
-- **添加节点**: 通过 URI 添加新节点（名称自动从 URI fragment 提取）
-- **编辑节点**: 修改现有节点配置
-- **删除节点**: 从配置中移除节点
-- **重载配置**: 重启 sing-box 内核使更改生效（⚠️ 会中断现有连接）
-- **端口保留**: 重载后已有节点保持原有端口不变
-
-Multi-Port 模式下，端口从 `base_port` 自动分配。
-
-**API 端点：**
-
-| 方法 | 端点 | 说明 |
-|------|------|------|
-| GET | `/api/nodes/config` | 获取所有配置节点 |
-| POST | `/api/nodes/config` | 添加新节点 |
-| PUT | `/api/nodes/config/:name` | 按名称更新节点 |
-| DELETE | `/api/nodes/config/:name` | 按名称删除节点 |
-| POST | `/api/reload` | 重载配置 |
-| GET | `/api/settings` | 获取当前设置 |
-| PUT | `/api/settings` | 更新设置（external_ip, probe_target） |
-
-**请求示例：**
+## 开发验证
 
 ```bash
-# 添加节点
-curl -X POST http://localhost:9090/api/nodes/config \
-  -H "Content-Type: application/json" \
-  -d '{"uri": "vless://uuid@server:443#节点名称"}'
-
-# 删除节点
-curl -X DELETE http://localhost:9090/api/nodes/config/节点名称
-
-# 重载配置
-curl -X POST http://localhost:9090/api/reload
+go test ./...
 ```
 
-### 健康检查机制
-
-程序启动时会自动对所有节点进行健康检查，之后定期检查：
-
-- **初始检查**: 启动后立即检测所有节点的连通性
-- **定期检查**: 每 5 分钟检查一次所有节点状态
-- **智能过滤**: 不可用节点自动从 WebUI 和导出列表中隐藏
-- **探测目标**: 通过 `management.probe_target` 配置（默认 `www.apple.com:80`）
-
-```yaml
-management:
-  enabled: true
-  listen: 0.0.0.0:9090
-  probe_target: www.apple.com:80  # 健康检查探测目标
-```
-
-### 密码保护
-
-为了保护节点信息安全，可以为 WebUI 设置访问密码：
-
-```yaml
-management:
-  enabled: true
-  listen: 0.0.0.0:9090
-  password: "your_secure_password"  # 设置 WebUI 访问密码
-```
-
-- 如果 `password` 为空或不设置，则无需密码即可访问
-- 设置密码后，首次访问会弹出登录界面
-- 登录成功后，session 会保存 7 天
-
-### 订阅定时刷新
-
-支持定时自动刷新订阅链接，获取最新节点：
-
-```yaml
-subscription_refresh:
-  enabled: true                 # 启用定时刷新
-  interval: 1h                  # 刷新间隔（默认 1 小时）
-  timeout: 30s                  # 获取订阅超时
-  health_check_timeout: 60s     # 新节点健康检查超时
-  drain_timeout: 30s            # 旧实例排空超时
-  min_available_nodes: 1        # 最少可用节点数，低于此值不切换
-```
-
-> ⚠️ **重要提示：订阅刷新会导致连接中断**
->
-> 订阅刷新时，程序会**重启 sing-box 内核**以加载新节点配置。这意味着：
->
-> - **所有现有连接将被断开**
-> - 正在进行的下载、流媒体播放等会中断
-> - 客户端需要重新建立连接
->
-> **建议：**
-> - 将刷新间隔设置为较长时间（如 `1h` 或更长）
-> - 避免在业务高峰期手动触发刷新
-> - 如果对连接稳定性要求极高，建议关闭此功能（`enabled: false`）
-
-**WebUI 和 API 支持：**
-
-- WebUI 显示订阅状态（节点数、上次刷新时间、错误信息）
-- 支持手动触发刷新按钮
-- API 端点：
-  - `GET /api/subscription/status` - 获取订阅状态
-  - `POST /api/subscription/refresh` - 手动触发刷新
-
-## 端口说明
-
-| 端口 | 用途 |
-|------|------|
-| 2323 | 统一代理入口（节点池/混合模式） |
-| 9090 | Web 监控面板 |
-| 24000+ | 每节点独立端口（多端口/混合模式） |
-
-## Docker 部署
-
-**方式一：主机网络模式（推荐）**
-
-使用 `network_mode: host` 直接使用主机网络，无需手动映射端口：
-
-```yaml
-# docker-compose.yml
-services:
-  easy-proxies:
-    image: ghcr.io/jasonwong1991/easy_proxies:latest
-    container_name: easy-proxies
-    restart: unless-stopped
-    network_mode: host
-    volumes:
-      - ./config.yaml:/etc/easy-proxies/config.yaml
-      - ./nodes.txt:/etc/easy-proxies/nodes.txt
-```
-
-> **注意**: 配置文件需要可写权限以支持 WebUI 设置保存。如遇权限问题，请执行 `chmod 666 config.yaml nodes.txt`
-
-> **优点**: 容器直接使用主机网络，所有端口自动对外开放。端口自动重分配功能可完美工作。
-
-**方式二：端口映射模式**
-
-手动指定需要映射的端口：
-
-```yaml
-# docker-compose.yml
-services:
-  easy-proxies:
-    image: ghcr.io/jasonwong1991/easy_proxies:latest
-    container_name: easy-proxies
-    restart: unless-stopped
-    ports:
-      - "2323:2323"       # 节点池/混合模式入口
-      - "9091:9091"       # Web 监控面板
-      - "24000-24200:24000-24200"  # 多端口/混合模式
-    volumes:
-      - ./config.yaml:/etc/easy-proxies/config.yaml
-      - ./nodes.txt:/etc/easy-proxies/nodes.txt
-```
-
-> **注意**: 多端口和混合模式需要映射足够的端口范围，建议预留一些缓冲端口用于自动重分配。
-
-## 构建
-
-```bash
-# 基础构建
-go build -o easy-proxies ./cmd/easy_proxies
-
-# 完整功能构建
-go build -tags "with_utls with_quic with_grpc with_wireguard with_gvisor" -o easy-proxies ./cmd/easy_proxies
-```
-
-## 更新日志
-
-### v1.1.0 (2026-02-02) - GeoIP、安全与性能版本
-
-**🌍 GeoIP 功能（仅节点池模式）：**
-- ⭐ **基于地域的节点池路由**（可选功能）
-  - 通过 URL 路径访问特定地域的节点池：`/jp`、`/kr`、`/us`、`/hk`、`/tw` 等
-  - 节点池模式下自动识别所有节点的 IP 地理位置
-  - Dashboard 显示各地域节点数量
-- ⭐ **自动 GeoIP 数据库管理**
-  - 首次启动自动从 GitHub 下载（约 9MB）
-  - 定期自动更新（可配置间隔，默认 24 小时）
-  - 热重载，无需服务中断
-  - MMDB 格式验证和完整性检查
-- ⭐ **hy2:// 协议支持**
-  - 支持 Hysteria2 简写形式（hy2://）
-  - 向后兼容 hysteria2://
-
-**🔒 安全增强：**
-- 增强的会话管理，支持自动过期（24小时 TTL）和每小时清理
-- 恒定时间密码比较，防止时序攻击
-- 基于信号量的并发控制（CPU×4 个 goroutine，最少 10 个）
-- 文件锁定机制，确保配置文件并发写入安全
-
-**⚡ 性能改进：**
-- 订阅内容解析速度提升 50-70%，优化 base64 检测算法
-- HTTP 连接池（最大空闲连接 100，每主机 10）减少 TIME_WAIT 连接
-- 响应大小限制（10MB）防止内存耗尽
-- 优雅关闭机制，30秒超时和2秒连接排空
-
-**🔧 技术细节：**
-- 新增自动 GeoIP 数据库下载和更新机制
-- 实现 GeoIP 数据库热重载功能
-- 新增 `golang.org/x/sync/semaphore` 用于并发控制
-- 实现 `syscall.Flock` Unix 文件锁定
-- 配置自定义 HTTP transport 和优化的超时设置
-- 无破坏性变更 - 完全向后兼容
-
-**📝 升级说明：**
-- GeoIP 是节点池模式的可选功能（默认禁用）
-- 启用后 GeoIP 数据库将自动下载
-- 升级后现有会话将失效（用户需要重新登录）
-- 无需修改配置文件
-- 建议在低流量时段重启服务
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=jasonwong1991/easy_proxies&type=Date)](https://star-history.com/#jasonwong1991/easy_proxies&Date)
-
-## 许可证
-
-MIT License
