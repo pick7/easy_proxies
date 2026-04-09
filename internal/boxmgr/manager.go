@@ -198,6 +198,11 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 	// Reset shared state store to ensure clean state for new config
 	pool.ResetSharedStateStore()
 
+	// Clear stale monitor nodes so the dashboard reflects the new config
+	if m.monitorMgr != nil {
+		m.monitorMgr.ClearNodes()
+	}
+
 	// Create and start new box instance with automatic port conflict resolution
 	var instance *box.Box
 	maxRetries := 10
@@ -230,6 +235,11 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 	m.currentBox = instance
 	m.cfg = newCfg
 	m.mu.Unlock()
+
+	// Trigger initial health check for newly registered nodes
+	if m.monitorMgr != nil {
+		go m.monitorMgr.ProbeAllNow(periodicHealthTimeout)
+	}
 
 	m.logger.Infof("reload completed successfully with %d nodes", len(newCfg.Nodes))
 	return nil

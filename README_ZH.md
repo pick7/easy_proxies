@@ -17,12 +17,13 @@ Easy Proxies 是一个基于 sing-box 的代理池管理工具。
 - 自动健康检查、失败熔断和黑名单恢复。
 - Web 管理面板 + API：
   - 节点状态/探测/导出
-  - 动态设置（`external_ip`、`probe_target`、`skip_cert_verify`）
+  - **手动拉黑/解封节点**
+  - 动态设置（`external_ip`、`probe_target`、`skip_cert_verify`、`geoip`）
   - 节点配置增删改查 + 重载
-  - 订阅状态查询 + 手动刷新
+  - 订阅状态查询 + 手动刷新 + **保存即时生效**
   - **实时日志控制台**（最近 1000 行，WebSocket 流式传输）
 - 新增可配置 DNS 解析器（对 VMess 域名节点非常关键）。
-- 可选 GeoIP 标记（在面板中展示 region/country 统计与筛选，仅 pool 模式可用，支持自动更新和热重载）。
+- 可选 GeoIP 标记（支持 JP/KR/US/HK/TW/SG 地域分区，可在 WebUI 中开关，支持自动更新和热重载）。
 - **可配置日志轮转**，支持大小限制、备份数量和压缩。
 
 ## 快速开始
@@ -143,8 +144,10 @@ dns:
 - `GET /api/nodes`
 - `POST /api/nodes/{tag}/probe`
 - `POST /api/nodes/{tag}/release`
+- `POST /api/nodes/{tag}/blacklist`
 - `POST /api/nodes/probe-all`（SSE）
 - `GET /api/export`
+- `GET|PUT /api/subscription/config`
 - `GET|POST /api/subscription/status|refresh`
 - `GET|POST|PUT|DELETE /api/nodes/config[...]`
 - `POST /api/reload`

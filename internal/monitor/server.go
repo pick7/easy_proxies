@@ -53,6 +53,7 @@ type SubscriptionRefresher interface {
 	RefreshNow() error
 	Status() SubscriptionStatus
 	UpdateConfig(urls []string, enabled bool, interval time.Duration)
+	UpdateConfigAndRefresh(urls []string, enabled bool, interval time.Duration) error
 }
 
 // SubscriptionStatus represents subscription refresh status.
@@ -176,7 +177,7 @@ func (s *Server) getSettings() (externalIP, probeTarget string, skipCertVerify b
 }
 
 // updateSettings updates dynamic settings and persists to config file.
-func (s *Server) updateSettings(externalIP, probeTarget string, skipCertVerify bool, logCfg *config.LogConfig) error {
+func (s *Server) updateSettings(externalIP, probeTarget string, skipCertVerify bool, logCfg *config.LogConfig, geoipEnabled bool) error {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 
@@ -191,6 +192,14 @@ func (s *Server) updateSettings(externalIP, probeTarget string, skipCertVerify b
 	s.cfgSrc.ExternalIP = externalIP
 	s.cfgSrc.Management.ProbeTarget = probeTarget
 	s.cfgSrc.SkipCertVerify = skipCertVerify
+
+	// GeoIP settings
+	s.cfgSrc.GeoIP.Enabled = geoipEnabled
+	if geoipEnabled && s.cfgSrc.GeoIP.DatabasePath == "" {
+		s.cfgSrc.GeoIP.DatabasePath = "./GeoLite2-Country.mmdb"
+		s.cfgSrc.GeoIP.AutoUpdateEnabled = true
+		s.cfgSrc.GeoIP.AutoUpdateInterval = 24 * time.Hour
+	}
 
 	if logCfg != nil {
 		s.cfgSrc.Log.Output = logCfg.Output
@@ -367,6 +376,26 @@ func (s *Server) handleNodeAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"message": "已解除拉黑"})
+	case "blacklist":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Duration string `json:"duration"` // e.g. "1h", "24h", "30m"
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Duration == "" {
+			req.Duration = "24h"
+		}
+		duration, err := time.ParseDuration(req.Duration)
+		if err != nil || duration <= 0 {
+			duration = 24 * time.Hour
+		}
+		if err := s.mgr.ManualBlacklist(tag, duration); err != nil {
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, map[string]any{"message": fmt.Sprintf("已拉黑 %s", duration)})
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -675,6 +704,14 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		extIP, probeTarget, skipCertVerify, logCfg := s.getSettings()
+		var geoipEnabled bool
+		var geoipDBPath string
+		s.cfgMu.RLock()
+		if s.cfgSrc != nil {
+			geoipEnabled = s.cfgSrc.GeoIP.Enabled
+			geoipDBPath = s.cfgSrc.GeoIP.DatabasePath
+		}
+		s.cfgMu.RUnlock()
 		writeJSON(w, map[string]any{
 			"external_ip":      extIP,
 			"probe_target":     probeTarget,
@@ -686,6 +723,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				"max_backups": logCfg.MaxBackups,
 				"max_age":     logCfg.MaxAge,
 				"compress":    logCfg.Compress,
+			},
+			"geoip": map[string]any{
+				"enabled":       geoipEnabled,
+				"database_path": geoipDBPath,
 			},
 		})
 	case http.MethodPut:
@@ -700,6 +741,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				MaxAge     int    `json:"max_age"`
 				Compress   bool   `json:"compress"`
 			} `json:"log"`
+			GeoIP *struct {
+				Enabled bool `json:"enabled"`
+			} `json:"geoip"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -721,7 +765,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if err := s.updateSettings(extIP, probeTarget, req.SkipCertVerify, logCfg); err != nil {
+		if err := s.updateSettings(extIP, probeTarget, req.SkipCertVerify, logCfg, req.GeoIP != nil && req.GeoIP.Enabled); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			writeJSON(w, map[string]any{"error": err.Error()})
 			return
@@ -840,25 +884,44 @@ func (s *Server) handleSubscriptionConfig(w http.ResponseWriter, r *http.Request
 			}
 		}
 
-		// Update in-memory config
+		// Update in-memory config and persist to disk
 		s.cfgMu.Lock()
 		if s.cfgSrc != nil {
 			s.cfgSrc.Subscriptions = cleanURLs
 			s.cfgSrc.SubscriptionRefresh.Enabled = req.Enabled
 			s.cfgSrc.SubscriptionRefresh.Interval = interval
+			// Always persist to disk regardless of subscription manager state
+			if err := s.cfgSrc.SaveSettings(); err != nil {
+				s.cfgMu.Unlock()
+				w.WriteHeader(http.StatusInternalServerError)
+				writeJSON(w, map[string]any{"error": fmt.Sprintf("保存配置失败: %v", err)})
+				return
+			}
 		}
 		s.cfgMu.Unlock()
 
-		// Hot-reload subscription manager
+		// Hot-reload subscription manager and wait for refresh to complete
 		if s.subRefresher != nil {
-			s.subRefresher.UpdateConfig(cleanURLs, req.Enabled, interval)
+			if err := s.subRefresher.UpdateConfigAndRefresh(cleanURLs, req.Enabled, interval); err != nil {
+				// Config was saved but refresh failed — report partial success
+				writeJSON(w, map[string]any{
+					"message":       fmt.Sprintf("订阅配置已保存，但刷新失败: %v", err),
+					"subscriptions": cleanURLs,
+					"enabled":       req.Enabled,
+					"interval":      interval.String(),
+					"refresh_error": err.Error(),
+				})
+				return
+			}
 		}
 
+		status := s.subRefresher.Status()
 		writeJSON(w, map[string]any{
 			"message":       "订阅配置已更新并生效",
 			"subscriptions": cleanURLs,
 			"enabled":       req.Enabled,
 			"interval":      interval.String(),
+			"node_count":    status.NodeCount,
 		})
 
 	default:

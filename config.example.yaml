@@ -90,7 +90,7 @@ dns:
 # ───────────────────────────────────────────────────────────────
 # 启用后会为节点打上地域标签（jp/kr/us/hk/tw/other），用于 WebUI 统计和筛选。
 geoip:
-  enabled: false                                     # 是否启用 GeoIP 地域标记
+  enabled: true                      # 是否启用 GeoIP 地域标记
   database_path: "./GeoLite2-Country.mmdb"           # GeoIP 数据库路径（首次启动时自动下载）
   auto_update_enabled: true                          # 是否启用自动更新数据库（推荐）
   auto_update_interval: 24h                          # 自动更新间隔（默认 24 小时）

@@ -386,6 +386,13 @@
     <div style="padding: 20px; border-top: 1px solid var(--border);">
       <button class="btn" style="width: 100%; justify-content: center;" onclick="showSettingsModal()">系统设置</button>
     </div>
+    <div style="padding: 0 20px 16px; text-align: center;">
+      <a href="https://github.com/jasonwong1991/easy_proxies" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; color:var(--text-muted); text-decoration:none; font-size:12px; padding:6px 10px; border-radius:6px; border:1px solid var(--border); transition:all 0.2s;" onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--text-main)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        <span id="githubStars">-</span>
+      </a>
+    </div>
   </aside>
 
   <!-- Main Content -->
@@ -481,6 +488,7 @@
           <button class="region-btn" data-region="us" onclick="filterByRegion('us')">🇺🇸 US</button>
           <button class="region-btn" data-region="hk" onclick="filterByRegion('hk')">🇭🇰 HK</button>
           <button class="region-btn" data-region="tw" onclick="filterByRegion('tw')">🇹🇼 TW</button>
+          <button class="region-btn" data-region="sg" onclick="filterByRegion('sg')">🇸🇬 SG</button>
           <button class="region-btn" data-region="other" onclick="filterByRegion('other')">Other</button>
         </div>
 
@@ -675,6 +683,17 @@
           </div>
 
           <div style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px;">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-main);">🌍 GeoIP 地域标记 (重启后生效)</div>
+            <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+              <input type="checkbox" id="settingGeoIPEnabled" />
+              <label>启用 GeoIP 地域分区 (Enable GeoIP Region Tagging)</label>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+              ℹ️ 首次启用会自动下载 GeoIP 数据库（约 9MB），重启后生效
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px;">
             <div style="font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-main);">🔗 订阅配置 (实时生效)</div>
             <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
               <input type="checkbox" id="settingSubEnabled" />
@@ -749,6 +768,7 @@
     let currentRegionFilter = 'all';
     let isEditMode = false;
     let configNodes = [];
+    let _savedSubSnapshot = ''; // snapshot of subscription config when settings modal opened
 
     // Chart instances
     let regionChartInst = null;
@@ -770,7 +790,7 @@
       trafficChartInst && trafficChartInst.resize();
     });
 
-    const EMOJIS = { jp: '🇯🇵', kr: '🇰🇷', us: '🇺🇸', hk: '🇭🇰', tw: '🇹🇼', other: '🌍' };
+    const EMOJIS = { jp: '🇯🇵', kr: '🇰🇷', us: '🇺🇸', hk: '🇭🇰', tw: '🇹🇼', sg: '🇸🇬', other: '🌍' };
 
     function showToast(msg, type='success') {
       const c = document.getElementById('toastContainer');
@@ -1051,7 +1071,7 @@
           <td class="tt-mono" style="color: ${n.failure_count>0 ? 'var(--error)' : 'inherit'}">${n.failure_count||0}</td>
           <td>
             <button class="btn btn-sm" onclick="probeNode('${escapeHtml(n.tag)}')">探测</button>
-            ${n.blacklisted ? `<button class="btn btn-sm btn-primary" onclick="releaseNode('${escapeHtml(n.tag)}')">解封</button>`:''}
+            ${n.blacklisted ? `<button class="btn btn-sm btn-primary" onclick="releaseNode('${escapeHtml(n.tag)}')">解封</button>` : `<button class="btn btn-sm btn-danger" onclick="blacklistNode('${escapeHtml(n.tag)}')">拉黑</button>`}
           </td>
         </tr>`;
       }).join('');
@@ -1071,6 +1091,15 @@
         const r = await fetch('/api/nodes/'+encodeURIComponent(tag)+'/release', {method:'POST'});
         showToast('已解封'); refresh();
       } catch(e) { }
+    }
+
+    async function blacklistNode(tag) {
+      if(!confirm('确定拉黑该节点 24 小时？')) return;
+      try {
+        const r = await fetch('/api/nodes/'+encodeURIComponent(tag)+'/blacklist', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({duration:'24h'})});
+        const d = await r.json();
+        if(d.error) showToast(d.error, 'error'); else { showToast(d.message); refresh(); }
+      } catch(e) { showToast('拉黑失败', 'error'); }
     }
 
     // Probe All
@@ -1309,6 +1338,10 @@
         document.getElementById('settingLogCompress').checked = logCfg.compress || false;
         toggleLogFileSettings();
 
+        // GeoIP settings
+        const geoipCfg = d.geoip || {};
+        document.getElementById('settingGeoIPEnabled').checked = geoipCfg.enabled || false;
+
         // Subscription settings
         try {
           const sr = await fetch('/api/subscription/config'); const sd = await sr.json();
@@ -1321,6 +1354,7 @@
           for (let opt of sel.options) { if (iv === opt.value || iv === opt.value.replace('m','m0s') || iv.startsWith(opt.value)) { sel.value = opt.value; matched = true; break; } }
           if (!matched) sel.value = '1h';
           document.getElementById('settingSubURLs').value = (sd.subscriptions || []).join('\n');
+          _savedSubSnapshot = JSON.stringify({urls: (sd.subscriptions || []).join('\n'), enabled: sd.enabled || false, interval: sel.value});
         } catch(e){}
 
         document.getElementById('settingsOverlay').classList.add('show');
@@ -1335,6 +1369,12 @@
 
     async function handleSettingsSave(e) {
       e.preventDefault();
+      const saveBtn = e.target.querySelector('button[type="submit"]');
+      const originalText = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+      saveBtn.style.opacity = '0.6';
+
       const p = {
         external_ip: document.getElementById('settingExternalIP').value,
         probe_target: document.getElementById('settingProbeTarget').value,
@@ -1345,27 +1385,51 @@
           max_backups: parseInt(document.getElementById('settingLogMaxBackups').value) || 3,
           max_age: parseInt(document.getElementById('settingLogMaxAge').value) || 7,
           compress: document.getElementById('settingLogCompress').checked,
+        },
+        geoip: {
+          enabled: document.getElementById('settingGeoIPEnabled').checked,
         }
       };
       try {
         const r = await fetch('/api/settings', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p)});
         if(!r.ok) { showToast('保存失败', 'error'); return; }
-      } catch(e){ showToast('保存失败', 'error'); return; }
+      } catch(e){ showToast('保存失败', 'error'); return; } finally { saveBtn.disabled = false; saveBtn.textContent = originalText; saveBtn.style.opacity = '1'; }
 
-      // Save subscription config separately (hot-reload)
+      // Save subscription config separately (hot-reload) — skip if unchanged
       const subURLs = document.getElementById('settingSubURLs').value.split('\n').map(s => s.trim()).filter(s => s);
-      const subPayload = {
-        subscriptions: subURLs,
-        enabled: document.getElementById('settingSubEnabled').checked,
-        interval: document.getElementById('settingSubInterval').value,
-      };
-      try {
-        const sr = await fetch('/api/subscription/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(subPayload)});
-        if(!sr.ok) { showToast('订阅配置保存失败', 'error'); return; }
-      } catch(e){ showToast('订阅配置保存失败', 'error'); return; }
+      const subEnabled = document.getElementById('settingSubEnabled').checked;
+      const subInterval = document.getElementById('settingSubInterval').value;
+      const currentSubSnapshot = JSON.stringify({urls: subURLs.join('\n'), enabled: subEnabled, interval: subInterval});
+      const subChanged = currentSubSnapshot !== _savedSubSnapshot;
+
+      if (subChanged) {
+        if (subURLs.length > 0) {
+          saveBtn.disabled = true;
+          saveBtn.textContent = '更新订阅中...';
+          saveBtn.style.opacity = '0.6';
+        }
+        const subPayload = {
+          subscriptions: subURLs,
+          enabled: subEnabled,
+          interval: subInterval,
+        };
+        try {
+          const sr = await fetch('/api/subscription/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(subPayload)});
+          if(!sr.ok) { showToast('订阅配置保存失败', 'error'); return; }
+          const sd = await sr.json();
+          if (sd.refresh_error) {
+            showToast('订阅已保存，但刷新失败: ' + sd.refresh_error, 'error');
+          } else if (sd.node_count !== undefined) {
+            showToast('设置已保存，已获取 ' + sd.node_count + ' 个节点');
+          } else {
+            showToast('设置已保存（日志设置重启后生效）');
+          }
+        } catch(e){ showToast('订阅配置保存失败', 'error'); return; } finally { saveBtn.disabled = false; saveBtn.textContent = originalText; saveBtn.style.opacity = '1'; }
+      } else {
+        showToast('设置已保存');
+      }
 
       document.getElementById('settingsOverlay').classList.remove('show');
-      showToast('设置已保存（订阅已实时生效，日志设置重启后生效）');
       refresh();
     }
 
@@ -1469,6 +1533,12 @@
 
     // Init App
     checkAuth().then(ok => { if(ok) { refresh(); startAutoRefresh(); } });
+
+    // Fetch GitHub stars
+    fetch('https://api.github.com/repos/jasonwong1991/easy_proxies')
+      .then(r => r.json())
+      .then(d => { if(d.stargazers_count !== undefined) document.getElementById('githubStars').textContent = d.stargazers_count; })
+      .catch(() => {});
   </script>
 </body>
 </html>

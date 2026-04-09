@@ -46,17 +46,18 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		server.SetConfig(cfg)
 	}
 
-	// Create and start SubscriptionManager if enabled
-	var subMgr *subscription.Manager
-	if cfg.SubscriptionRefresh.Enabled && len(cfg.Subscriptions) > 0 {
-		subMgr = subscription.New(cfg, boxMgr)
-		subMgr.Start()
-		defer subMgr.Stop()
+	// Always create SubscriptionManager so WebUI can hot-reload subscription config
+	subMgr := subscription.New(cfg, boxMgr)
+	defer subMgr.Stop()
 
-		// Wire up subscription manager to monitor server for API endpoints
-		if server := boxMgr.MonitorServer(); server != nil {
-			server.SetSubscriptionRefresher(subMgr)
-		}
+	// Start refresh loop only if subscriptions are already configured
+	if cfg.SubscriptionRefresh.Enabled && len(cfg.Subscriptions) > 0 {
+		subMgr.Start()
+	}
+
+	// Wire up subscription manager to monitor server for API endpoints
+	if server := boxMgr.MonitorServer(); server != nil {
+		server.SetSubscriptionRefresher(subMgr)
 	}
 
 	// Wait for shutdown signal

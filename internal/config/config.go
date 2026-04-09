@@ -1135,6 +1135,7 @@ func (c *Config) SaveSettings() error {
 	saveCfg.Log = c.Log
 	saveCfg.Subscriptions = c.Subscriptions
 	saveCfg.SubscriptionRefresh = c.SubscriptionRefresh
+	saveCfg.GeoIP = c.GeoIP
 
 	newData, err := yaml.Marshal(&saveCfg)
 	if err != nil {

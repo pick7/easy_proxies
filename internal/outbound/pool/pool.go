@@ -132,8 +132,9 @@ func newPool(ctx context.Context, _ adapter.Router, logger log.ContextLogger, ta
 				// Attach entry to shared state so all pool instances share it
 				state.attachEntry(entry)
 				logger.Info("registered node: ", memberTag)
-				// Set probe and release functions immediately
+				// Set probe, release, and blacklist functions immediately
 				entry.SetRelease(p.makeReleaseByTagFunc(memberTag))
+				entry.SetBlacklistFn(p.makeBlacklistByTagFunc(memberTag))
 				if probeFn := p.makeProbeByTagFunc(memberTag); probeFn != nil {
 					entry.SetProbe(probeFn)
 				}
@@ -227,6 +228,7 @@ func (p *poolOutbound) initializeMembersLocked() error {
 				state.attachEntry(entry)
 				member.entry = entry
 				entry.SetRelease(p.makeReleaseFunc(member))
+				entry.SetBlacklistFn(p.makeBlacklistByTagFunc(member.tag))
 				if probe := p.makeProbeFunc(member); probe != nil {
 					entry.SetProbe(probe)
 				}
@@ -625,6 +627,13 @@ func (p *poolOutbound) makeProbeByTagFunc(tag string) func(ctx context.Context) 
 func (p *poolOutbound) makeReleaseByTagFunc(tag string) func() {
 	return func() {
 		releaseSharedMember(tag)
+	}
+}
+
+// makeBlacklistByTagFunc creates a blacklist function for manual ban via API
+func (p *poolOutbound) makeBlacklistByTagFunc(tag string) func(time.Duration) {
+	return func(duration time.Duration) {
+		blacklistSharedMember(tag, duration)
 	}
 }
 

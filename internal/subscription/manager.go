@@ -152,19 +152,62 @@ func (m *Manager) UpdateConfig(urls []string, enabled bool, interval time.Durati
 	m.manualRefresh = make(chan struct{}, 1)
 	m.mu.Unlock()
 
-	if enabled && len(urls) > 0 {
-		m.logger.Infof("subscription config updated: %d URLs, interval=%s, restarting loop", len(urls), m.baseCfg.SubscriptionRefresh.Interval)
-		go m.refreshLoop(m.baseCfg.SubscriptionRefresh.Interval)
+	if len(urls) == 0 {
+		m.logger.Infof("no subscription URLs configured, skipping refresh")
+		return
+	}
 
-		// Trigger an immediate refresh so the new URLs take effect right away
+	// Always start the refresh loop to handle the immediate refresh signal
+	m.logger.Infof("subscription config updated: %d URLs, enabled=%v, interval=%s", len(urls), enabled, m.baseCfg.SubscriptionRefresh.Interval)
+	go m.refreshLoop(m.baseCfg.SubscriptionRefresh.Interval)
+
+	// Always trigger an immediate fetch when URLs are provided,
+	// regardless of the "enabled" flag (which only controls periodic auto-refresh)
+	select {
+	case m.manualRefresh <- struct{}{}:
+		m.logger.Infof("triggered immediate refresh after config update")
+	default:
+		// A refresh is already pending
+	}
+}
+
+// UpdateConfigAndRefresh updates subscription config and synchronously waits for
+// the first refresh to complete before returning. This ensures the caller (WebUI API)
+// can confirm the update took effect.
+func (m *Manager) UpdateConfigAndRefresh(urls []string, enabled bool, interval time.Duration) error {
+	m.UpdateConfig(urls, enabled, interval)
+
+	if len(urls) == 0 {
+		return nil
+	}
+
+	// Wait for the refresh triggered by UpdateConfig to complete
+	timeout := m.baseCfg.SubscriptionRefresh.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	deadline := timeout + m.baseCfg.SubscriptionRefresh.HealthCheckTimeout
+
+	ctx, cancel := context.WithTimeout(m.ctx, deadline)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	startCount := m.Status().RefreshCount
+	for {
 		select {
-		case m.manualRefresh <- struct{}{}:
-			m.logger.Infof("triggered immediate refresh after config update")
-		default:
-			// A refresh is already pending
+		case <-ctx.Done():
+			return fmt.Errorf("刷新超时")
+		case <-ticker.C:
+			status := m.Status()
+			if status.RefreshCount > startCount {
+				if status.LastError != "" {
+					return fmt.Errorf("刷新失败: %s", status.LastError)
+				}
+				return nil
+			}
 		}
-	} else {
-		m.logger.Infof("subscription disabled or no URLs configured")
 	}
 }
 
@@ -219,30 +262,42 @@ func (m *Manager) Status() monitor.SubscriptionStatus {
 
 // refreshLoop runs the periodic refresh.
 func (m *Manager) refreshLoop(interval time.Duration) {
+	m.mu.RLock()
+	autoEnabled := m.baseCfg.SubscriptionRefresh.Enabled
+	m.mu.RUnlock()
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Update next refresh time
-	m.mu.Lock()
-	m.status.NextRefresh = time.Now().Add(interval)
-	m.mu.Unlock()
+	if autoEnabled {
+		// Update next refresh time only when auto-refresh is enabled
+		m.mu.Lock()
+		m.status.NextRefresh = time.Now().Add(interval)
+		m.mu.Unlock()
+	}
 
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
 		case <-ticker.C:
+			// Only do periodic refresh when auto-refresh is enabled
+			if !autoEnabled {
+				continue
+			}
 			m.doRefresh()
 			m.mu.Lock()
 			m.status.NextRefresh = time.Now().Add(interval)
 			m.mu.Unlock()
 		case <-m.manualRefresh:
+			// Always honor manual/immediate refresh regardless of enabled flag
 			m.doRefresh()
-			// Reset ticker after manual refresh
-			ticker.Reset(interval)
-			m.mu.Lock()
-			m.status.NextRefresh = time.Now().Add(interval)
-			m.mu.Unlock()
+			if autoEnabled {
+				ticker.Reset(interval)
+				m.mu.Lock()
+				m.status.NextRefresh = time.Now().Add(interval)
+				m.mu.Unlock()
+			}
 		}
 	}
 }

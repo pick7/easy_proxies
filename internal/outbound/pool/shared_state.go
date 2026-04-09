@@ -150,3 +150,15 @@ func releaseSharedMember(tag string) {
 		state.forceRelease()
 	}
 }
+
+// blacklistSharedMember manually blacklists a node in pool shared state.
+func blacklistSharedMember(tag string, duration time.Duration) {
+	if state, ok := lookupSharedState(tag); ok {
+		until := time.Now().Add(duration)
+		state.mu.Lock()
+		state.blacklisted = true
+		state.blacklistedUntil = until
+		state.failures = 0
+		state.mu.Unlock()
+	}
+}

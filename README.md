@@ -17,12 +17,13 @@ It focuses on turning many upstream nodes into one stable local HTTP/SOCKS5 prox
 - Provides automatic health checks and node blacklist recovery.
 - Provides Web dashboard + API for:
   - node status/probe/export
-  - settings update (`external_ip`, `probe_target`, `skip_cert_verify`)
+  - **manual node blacklist/release** from dashboard
+  - settings update (`external_ip`, `probe_target`, `skip_cert_verify`, `geoip`)
   - config node CRUD + reload
-  - subscription status + manual refresh
+  - subscription status + manual refresh + **hot-reload on save**
   - **real-time log console** (last 1000 lines, WebSocket streaming)
 - Adds configurable DNS resolver for outbound domain resolution (important for VMess nodes with domain hosts).
-- Optional GeoIP labeling with auto-update and hot-reload (region/country metadata in dashboard, pool mode only).
+- Optional GeoIP labeling with auto-update and hot-reload (supports JP/KR/US/HK/TW/SG regions, toggleable from WebUI).
 - **Configurable log rotation** with size limits, backup count, and compression.
 
 ## Quick Start
@@ -145,8 +146,10 @@ Main endpoints:
 - `GET /api/nodes`
 - `POST /api/nodes/{tag}/probe`
 - `POST /api/nodes/{tag}/release`
+- `POST /api/nodes/{tag}/blacklist`
 - `POST /api/nodes/probe-all` (SSE)
 - `GET /api/export`
+- `GET|PUT /api/subscription/config`
 - `GET|POST /api/subscription/status|refresh`
 - `GET|POST|PUT|DELETE /api/nodes/config[...]`
 - `POST /api/reload`
