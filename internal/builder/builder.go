@@ -223,11 +223,15 @@ func Build(cfg *config.Config) (option.Options, error) {
 
 	// Build pool inbound (single entry point for all nodes)
 	if enablePoolInbound {
-		inbound, err := buildPoolInbound(cfg)
-		if err != nil {
-			return option.Options{}, err
+		// When GeoIP is enabled, the GeoIP router takes over the listener port,
+		// so we skip creating the sing-box pool inbound to avoid port conflict.
+		if !cfg.GeoIP.Enabled {
+			inbound, err := buildPoolInbound(cfg)
+			if err != nil {
+				return option.Options{}, err
+			}
+			inbounds = append(inbounds, inbound)
 		}
-		inbounds = append(inbounds, inbound)
 		poolOptions := poolout.Options{
 			Mode:              cfg.Pool.Mode,
 			Members:           memberTags,

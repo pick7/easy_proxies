@@ -729,7 +729,7 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                   <div class="form-group"><label>数据库路径</label><input type="text" id="settingGeoIPDBPath" class="setting-input" placeholder="./GeoLite2-Country.mmdb" /></div>
                   <div class="form-group"><label>路由监听地址</label><input type="text" id="settingGeoIPListen" class="setting-input" /></div>
-                  <div class="form-group"><label>路由端口</label><input type="number" id="settingGeoIPPort" class="setting-input" min="1" max="65535" placeholder="2323" /></div>
+                  <div class="form-group"><label>路由端口</label><input type="number" id="settingGeoIPPort" class="setting-input" min="1" max="65535" placeholder="同listener端口" /></div>
                   <div class="form-group"><label>更新间隔</label><input type="text" id="settingGeoIPUpdateInterval" class="setting-input" placeholder="24h" /></div>
                 </div>
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">首次启用会自动下载 GeoIP 数据库（约 9MB），需重载核心生效</div>
