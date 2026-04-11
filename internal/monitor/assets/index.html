@@ -729,7 +729,7 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                   <div class="form-group"><label>数据库路径</label><input type="text" id="settingGeoIPDBPath" class="setting-input" placeholder="./GeoLite2-Country.mmdb" /></div>
                   <div class="form-group"><label>路由监听地址</label><input type="text" id="settingGeoIPListen" class="setting-input" /></div>
-                  <div class="form-group"><label>路由端口</label><input type="number" id="settingGeoIPPort" class="setting-input" min="1" max="65535" placeholder="同listener端口" /></div>
+                  <div class="form-group"><label>路由端口</label><input type="number" id="settingGeoIPPort" class="setting-input" min="1" max="65535" placeholder="1221" /></div>
                   <div class="form-group"><label>更新间隔</label><input type="text" id="settingGeoIPUpdateInterval" class="setting-input" placeholder="24h" /></div>
                 </div>
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">首次启用会自动下载 GeoIP 数据库（约 9MB），需重载核心生效</div>
@@ -1001,7 +1001,7 @@
       document.getElementById('totalNodes').textContent = data.total_nodes || allNodesCache.length;
       document.getElementById('healthyNodes').textContent = allNodesCache.filter(n => !n.blacklisted && n.initial_check_done && n.available).length;
       document.getElementById('activeConnections').textContent = allNodesCache.reduce((s, n) => s + (n.active_connections||0), 0);
-      document.getElementById('blacklistedNodes').textContent = allNodesCache.filter(n => n.blacklisted).length;
+      document.getElementById('blacklistedNodes').textContent = allNodesCache.filter(n => n.blacklisted || (!n.available && n.initial_check_done)).length;
       
       if(document.getElementById('dashboardTab').classList.contains('active')) {
         updateDashboardCharts();
@@ -1165,8 +1165,7 @@
         let badge = '', statusText = '';
         if (n.blacklisted) { badge = 'badge-error'; statusText = '拉黑 Blocked'; }
         else if (ms < 0) { badge = 'badge-offline'; statusText = '未测试 Unknown'; }
-        else if (n.failure_count >= 2) { badge = 'badge-error'; statusText = '异常 Error'; }
-        else if (n.failure_count == 1) { badge = 'badge-warning'; statusText = '警告 Warn'; }
+        else if (n.failure_count >= 1) { badge = 'badge-error'; statusText = '异常 Error'; }
         else { badge = 'badge-healthy'; statusText = '在线 Healthy'; }
 
         return `<tr>

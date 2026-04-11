@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
-	"github.com/sagernet/sing-box/log"
+	singlog "github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -69,7 +70,7 @@ type memberState struct {
 type poolOutbound struct {
 	outbound.Adapter
 	ctx            context.Context
-	logger         log.ContextLogger
+	logger         singlog.ContextLogger
 	manager        adapter.OutboundManager
 	options        Options
 	mode           string
@@ -82,7 +83,7 @@ type poolOutbound struct {
 	candidatesPool sync.Pool
 }
 
-func newPool(ctx context.Context, _ adapter.Router, logger log.ContextLogger, tag string, options Options) (adapter.Outbound, error) {
+func newPool(ctx context.Context, _ adapter.Router, logger singlog.ContextLogger, tag string, options Options) (adapter.Outbound, error) {
 	if len(options.Members) == 0 {
 		return nil, E.New("pool requires at least one member")
 	}
@@ -465,8 +466,10 @@ func (p *poolOutbound) recordFailure(member *memberState, cause error) {
 	failures, blacklisted, _ := member.shared.recordFailure(cause, p.options.FailureThreshold, p.options.BlacklistDuration)
 	if blacklisted {
 		p.logger.Warn("proxy ", member.tag, " blacklisted for ", p.options.BlacklistDuration, ": ", cause)
+		log.Printf("[pool] %s blacklisted for %s: %v", member.tag, p.options.BlacklistDuration, cause)
 	} else {
 		p.logger.Warn("proxy ", member.tag, " failure ", failures, "/", p.options.FailureThreshold, ": ", cause)
+		log.Printf("[pool] %s failure %d/%d: %v", member.tag, failures, p.options.FailureThreshold, cause)
 	}
 }
 
