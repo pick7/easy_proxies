@@ -42,7 +42,12 @@ type Options struct {
 	Members           []string
 	FailureThreshold  int
 	BlacklistDuration time.Duration
-	Metadata          map[string]MemberMeta
+	// RetryEnabled toggles automatic fail-over on dial failure.
+	RetryEnabled bool
+	// RetryAttempts is the maximum total dial attempts (including the first).
+	// Multi-member pools pick a different member per retry; single-member pools retry the same member.
+	RetryAttempts int
+	Metadata      map[string]MemberMeta
 }
 
 // MemberMeta carries optional descriptive information for monitoring UI.
@@ -160,6 +165,9 @@ func normalizeOptions(options Options) Options {
 	}
 	if options.BlacklistDuration <= 0 {
 		options.BlacklistDuration = 24 * time.Hour
+	}
+	if options.RetryAttempts <= 0 {
+		options.RetryAttempts = 3
 	}
 	if options.Metadata == nil {
 		options.Metadata = make(map[string]MemberMeta)
@@ -341,35 +349,157 @@ func (p *poolOutbound) probeAllMembersOnStartup() {
 }
 
 func (p *poolOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
-	member, err := p.pickMember(network)
-	if err != nil {
-		return nil, err
+	maxAttempts := p.maxAttempts()
+	singleMember := len(p.options.Members) <= 1
+	var tried map[string]bool
+	if !singleMember && maxAttempts > 1 {
+		tried = make(map[string]bool, maxAttempts)
 	}
-	p.incActive(member)
-	conn, err := member.outbound.DialContext(ctx, network, destination)
-	if err != nil {
-		p.decActive(member)
-		p.recordFailure(member, err)
-		return nil, err
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		member, err := p.pickMemberFiltered(network, tried)
+		if err != nil {
+			if lastErr != nil {
+				return nil, fmt.Errorf("%w (after %d attempt(s); last: %v)", err, attempt-1, lastErr)
+			}
+			return nil, err
+		}
+		p.incActive(member)
+		conn, dialErr := member.outbound.DialContext(ctx, network, destination)
+		if dialErr != nil {
+			p.decActive(member)
+			p.recordFailure(member, dialErr)
+			lastErr = dialErr
+			if tried != nil {
+				tried[member.tag] = true
+			}
+			if attempt < maxAttempts {
+				p.logger.Warn("dial via ", member.tag, " failed (attempt ", attempt, "/", maxAttempts, "), retrying: ", dialErr)
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				continue
+			}
+			break
+		}
+		if attempt > 1 {
+			p.logger.Info("dial succeeded via ", member.tag, " after ", attempt, " attempts")
+		}
+		p.recordSuccess(member)
+		return p.wrapConn(conn, member), nil
 	}
-	p.recordSuccess(member)
-	return p.wrapConn(conn, member), nil
+	if lastErr == nil {
+		lastErr = E.New("no healthy proxy available")
+	}
+	return nil, fmt.Errorf("dial failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
 func (p *poolOutbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	member, err := p.pickMember(N.NetworkUDP)
-	if err != nil {
-		return nil, err
+	maxAttempts := p.maxAttempts()
+	singleMember := len(p.options.Members) <= 1
+	var tried map[string]bool
+	if !singleMember && maxAttempts > 1 {
+		tried = make(map[string]bool, maxAttempts)
 	}
-	p.incActive(member)
-	conn, err := member.outbound.ListenPacket(ctx, destination)
-	if err != nil {
-		p.decActive(member)
-		p.recordFailure(member, err)
-		return nil, err
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		member, err := p.pickMemberFiltered(N.NetworkUDP, tried)
+		if err != nil {
+			if lastErr != nil {
+				return nil, fmt.Errorf("%w (after %d attempt(s); last: %v)", err, attempt-1, lastErr)
+			}
+			return nil, err
+		}
+		p.incActive(member)
+		conn, listenErr := member.outbound.ListenPacket(ctx, destination)
+		if listenErr != nil {
+			p.decActive(member)
+			p.recordFailure(member, listenErr)
+			lastErr = listenErr
+			if tried != nil {
+				tried[member.tag] = true
+			}
+			if attempt < maxAttempts {
+				p.logger.Warn("listen-packet via ", member.tag, " failed (attempt ", attempt, "/", maxAttempts, "), retrying: ", listenErr)
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				continue
+			}
+			break
+		}
+		if attempt > 1 {
+			p.logger.Info("listen-packet succeeded via ", member.tag, " after ", attempt, " attempts")
+		}
+		p.recordSuccess(member)
+		return p.wrapPacketConn(conn, member), nil
 	}
-	p.recordSuccess(member)
-	return p.wrapPacketConn(conn, member), nil
+	if lastErr == nil {
+		lastErr = E.New("no healthy proxy available")
+	}
+	return nil, fmt.Errorf("listen-packet failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// maxAttempts returns the configured retry budget (>=1).
+func (p *poolOutbound) maxAttempts() int {
+	if !p.options.RetryEnabled {
+		return 1
+	}
+	if p.options.RetryAttempts < 1 {
+		return 1
+	}
+	return p.options.RetryAttempts
+}
+
+// pickMemberFiltered selects a healthy member, optionally excluding tags in `tried`.
+// When `tried` is nil or every healthy member has been tried, falls back to picking
+// any healthy member (ensuring single-member pools retry the same node).
+func (p *poolOutbound) pickMemberFiltered(network string, tried map[string]bool) (*memberState, error) {
+	now := time.Now()
+	candidates := p.getCandidateBuffer()
+
+	p.mu.Lock()
+	if len(p.members) == 0 {
+		if err := p.initializeMembersLocked(); err != nil {
+			p.mu.Unlock()
+			p.putCandidateBuffer(candidates)
+			return nil, err
+		}
+	}
+	candidates = p.availableMembersLocked(now, network, candidates)
+	p.mu.Unlock()
+
+	if len(candidates) == 0 {
+		p.mu.Lock()
+		if p.releaseIfAllBlacklistedLocked(now) {
+			candidates = p.availableMembersLocked(now, network, candidates[:0])
+		}
+		p.mu.Unlock()
+	}
+
+	if len(candidates) == 0 {
+		p.putCandidateBuffer(candidates)
+		return nil, E.New("no healthy proxy available")
+	}
+
+	// Filter out members already tried in this request.
+	if len(tried) > 0 {
+		filtered := candidates[:0]
+		for _, m := range candidates {
+			if !tried[m.tag] {
+				filtered = append(filtered, m)
+			}
+		}
+		// If filtering left nothing, fall back to all candidates so we still
+		// dial something (matches per-node single-member retry semantics).
+		if len(filtered) > 0 {
+			candidates = filtered
+		}
+	}
+
+	member := p.selectMember(candidates)
+	p.putCandidateBuffer(candidates)
+	return member, nil
 }
 
 func (p *poolOutbound) pickMember(network string) (*memberState, error) {

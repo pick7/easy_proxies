@@ -72,6 +72,22 @@ type PoolConfig struct {
 	Mode              string        `yaml:"mode"`
 	FailureThreshold  int           `yaml:"failure_threshold"`
 	BlacklistDuration time.Duration `yaml:"blacklist_duration"`
+	// RetryEnabled toggles automatic fail-over to another member when a dial fails.
+	// nil/unset → default true. Use *bool so users can explicitly disable via YAML.
+	RetryEnabled *bool `yaml:"retry_enabled,omitempty"`
+	// RetryAttempts is the maximum total dial attempts per request (including the first).
+	// Default 3. Values <= 0 are normalized to 3.
+	// For pools with multiple members, each retry picks a different member when possible.
+	// For single-member pools (e.g. per-node multi-port pools), retries dial the same member.
+	RetryAttempts int `yaml:"retry_attempts,omitempty"`
+}
+
+// RetryEnabledOrDefault reports whether retry is enabled (default true).
+func (p PoolConfig) RetryEnabledOrDefault() bool {
+	if p.RetryEnabled == nil {
+		return true
+	}
+	return *p.RetryEnabled
 }
 
 // MultiPortConfig defines address/credential defaults for multi-port mode.
@@ -223,6 +239,9 @@ func (c *Config) normalize() error {
 	}
 	if c.Pool.BlacklistDuration <= 0 {
 		c.Pool.BlacklistDuration = 24 * time.Hour
+	}
+	if c.Pool.RetryAttempts <= 0 {
+		c.Pool.RetryAttempts = 3
 	}
 	if c.MultiPort.Address == "" {
 		c.MultiPort.Address = "0.0.0.0"
@@ -436,6 +455,9 @@ func (c *Config) NormalizeWithPortMap(portMap map[string]uint16) error {
 	}
 	if c.Pool.BlacklistDuration <= 0 {
 		c.Pool.BlacklistDuration = 24 * time.Hour
+	}
+	if c.Pool.RetryAttempts <= 0 {
+		c.Pool.RetryAttempts = 3
 	}
 	if c.MultiPort.Address == "" {
 		c.MultiPort.Address = "0.0.0.0"

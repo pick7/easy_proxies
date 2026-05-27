@@ -233,6 +233,8 @@ func Build(cfg *config.Config) (option.Options, error) {
 			Members:           memberTags,
 			FailureThreshold:  cfg.Pool.FailureThreshold,
 			BlacklistDuration: cfg.Pool.BlacklistDuration,
+			RetryEnabled:      cfg.Pool.RetryEnabledOrDefault(),
+			RetryAttempts:     cfg.Pool.RetryAttempts,
 			Metadata:          metadata,
 		}
 		outbounds = append(outbounds, option.Outbound{
@@ -258,6 +260,8 @@ func Build(cfg *config.Config) (option.Options, error) {
 				Members:           []string{tag},
 				FailureThreshold:  cfg.Pool.FailureThreshold,
 				BlacklistDuration: cfg.Pool.BlacklistDuration,
+				RetryEnabled:      cfg.Pool.RetryEnabledOrDefault(),
+				RetryAttempts:     cfg.Pool.RetryAttempts,
 				Metadata:          perMeta,
 			}
 			perPool := option.Outbound{
@@ -321,6 +325,8 @@ func Build(cfg *config.Config) (option.Options, error) {
 				Members:           members,
 				FailureThreshold:  cfg.Pool.FailureThreshold,
 				BlacklistDuration: cfg.Pool.BlacklistDuration,
+				RetryEnabled:      cfg.Pool.RetryEnabledOrDefault(),
+				RetryAttempts:     cfg.Pool.RetryAttempts,
 				Metadata:          regionMeta,
 			}
 			outbounds = append(outbounds, option.Outbound{
