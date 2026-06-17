@@ -713,6 +713,19 @@
             </div>
 
             <div class="panel" style="margin-bottom: 16px;">
+              <div class="panel-header"><div class="panel-title">粘性代理 (Sticky Session)</div></div>
+              <div style="padding: 16px;">
+                <div class="checkbox-grid">
+                  <div class="checkbox-row"><input type="checkbox" id="settingStickyEnabled" /><label for="settingStickyEnabled">启用粘性代理（独立端口，按客户端来源 IP 固定上游节点）</label></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                  <div class="form-group"><label>粘性端口</label><input type="number" id="settingStickyPort" class="setting-input" min="1" max="65535" placeholder="2324（留空则为 listener 端口 +1）" /></div>
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">仅 pool / hybrid 模式生效。开启后会额外监听一个端口，与原 listener 端口共存；通过粘性端口接入的客户端会按来源 IP 永久绑定到同一上游节点（节点失效时自动重选）。</div>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-bottom: 16px;">
               <div class="panel-header"><div class="panel-title">管理面板 (Management)</div></div>
               <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div class="form-group"><label>监听地址</label><input type="text" id="settingMgmtListen" class="setting-input" placeholder="0.0.0.0:8080" /></div>
@@ -1464,6 +1477,10 @@
         document.getElementById('settingPoolMode').value = pl.mode || 'random';
         document.getElementById('settingPoolFailure').value = pl.failure_threshold || 3;
         document.getElementById('settingPoolBlacklist').value = pl.blacklist_duration || '24h';
+        // Sticky
+        const st = d.sticky || {};
+        document.getElementById('settingStickyEnabled').checked = !!st.enabled;
+        document.getElementById('settingStickyPort').value = st.port || '';
         // Management
         const mgmt = d.management || {};
         document.getElementById('settingMgmtListen').value = mgmt.listen || '';
@@ -1517,6 +1534,8 @@
         pool_mode: document.getElementById('settingPoolMode').value,
         pool_failure: document.getElementById('settingPoolFailure').value,
         pool_blacklist: document.getElementById('settingPoolBlacklist').value,
+        sticky_enabled: document.getElementById('settingStickyEnabled').checked,
+        sticky_port: document.getElementById('settingStickyPort').value,
         mgmt_listen: document.getElementById('settingMgmtListen').value,
         mgmt_password: document.getElementById('settingMgmtPassword').value,
         geoip_enabled: document.getElementById('settingGeoIPEnabled').checked,
@@ -1580,6 +1599,10 @@
             mode: document.getElementById('settingPoolMode').value,
             failure_threshold: parseInt(document.getElementById('settingPoolFailure').value) || 3,
             blacklist_duration: document.getElementById('settingPoolBlacklist').value || '24h',
+          },
+          sticky: {
+            enabled: document.getElementById('settingStickyEnabled').checked,
+            port: parseInt(document.getElementById('settingStickyPort').value) || 0,
           },
           management: {
             listen: document.getElementById('settingMgmtListen').value,

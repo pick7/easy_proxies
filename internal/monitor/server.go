@@ -70,12 +70,12 @@ type SubscriptionStatus struct {
 
 // Server exposes HTTP endpoints for monitoring.
 type Server struct {
-	cfg          Config
-	cfgMu        sync.RWMutex   // 保护动态配置字段
-	cfgSrc       *config.Config // 可持久化的配置对象
-	mgr          *Manager
-	srv          *http.Server
-	logger       *log.Logger
+	cfg    Config
+	cfgMu  sync.RWMutex   // 保护动态配置字段
+	cfgSrc *config.Config // 可持久化的配置对象
+	mgr    *Manager
+	srv    *http.Server
+	logger *log.Logger
 
 	// Session management
 	sessionMu  sync.RWMutex
@@ -856,6 +856,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				"failure_threshold":  cfg.Pool.FailureThreshold,
 				"blacklist_duration": cfg.Pool.BlacklistDuration.String(),
 			}
+			resp["sticky"] = map[string]any{
+				"enabled": cfg.Sticky.Enabled,
+				"port":    cfg.Sticky.Port,
+			}
 			resp["management"] = map[string]any{
 				"listen":   cfg.Management.Listen,
 				"password": cfg.Management.Password,
@@ -893,6 +897,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				FailureThreshold  int    `json:"failure_threshold"`
 				BlacklistDuration string `json:"blacklist_duration"`
 			} `json:"pool,omitempty"`
+			Sticky *struct {
+				Enabled bool   `json:"enabled"`
+				Port    uint16 `json:"port"`
+			} `json:"sticky,omitempty"`
 			Management *struct {
 				Listen   string `json:"listen"`
 				Password string `json:"password"`
@@ -939,7 +947,6 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-
 		// Update extended settings
 		s.cfgMu.Lock()
 		if s.cfgSrc != nil {
@@ -966,6 +973,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 						s.cfgSrc.Pool.BlacklistDuration = d
 					}
 				}
+			}
+			if req.Sticky != nil {
+				s.cfgSrc.Sticky.Enabled = req.Sticky.Enabled
+				s.cfgSrc.Sticky.Port = req.Sticky.Port
 			}
 			if req.Management != nil {
 				s.cfgSrc.Management.Listen = req.Management.Listen
