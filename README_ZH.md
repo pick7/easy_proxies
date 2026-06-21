@@ -181,6 +181,46 @@ dns:
 
 ## 常见问题
 
+### 配置持久化问题
+
+**问题描述**：在 Docker 环境中通过 WebUI 修改配置后，重启或重建容器时配置被重置。
+
+**快速诊断**：
+```bash
+./diagnose.sh
+```
+
+**常见原因和解决方案**：
+
+1. **文件权限问题**：
+   ```bash
+   # 修复权限
+   chown -R $(id -u):$(id -g) data
+   chmod 755 data
+   chmod 644 data/config.yaml data/nodes.txt
+   ```
+
+2. **卷映射错误**：
+   - 确保 `docker-compose.yml` 中使用 `./data:/etc/easy_proxies`
+   - 不要使用绝对路径或错误的目录
+
+3. **启动时未传递 UID/GID**：
+   ```bash
+   # 正确的启动方式
+   UID=$(id -u) GID=$(id -g) docker-compose up -d
+   ```
+
+**验证配置是否保存**：
+```bash
+# 查看文件修改时间
+ls -lh data/config.yaml data/nodes.txt
+
+# 查看容器日志，确认保存成功
+docker-compose logs -f | grep "Saved"
+```
+
+**详细故障排查**：参见 [docs/troubleshooting-persistence.md](docs/troubleshooting-persistence.md)
+
 ### Docker 权限问题
 
 **问题描述**：使用 `docker-compose.yml` 映射配置目录时，可能遇到 "permission denied" 或 "cannot write to /etc/easy_proxies" 等权限错误。

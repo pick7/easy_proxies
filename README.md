@@ -377,6 +377,46 @@ services:
 
 ## Troubleshooting
 
+### Configuration Persistence Issues
+
+**Problem**: Configuration changes made via WebUI are lost after container restart or rebuild.
+
+**Quick Diagnosis**:
+```bash
+./diagnose.sh
+```
+
+**Common Causes and Solutions**:
+
+1. **File Permission Issues**:
+   ```bash
+   # Fix permissions
+   chown -R $(id -u):$(id -g) data
+   chmod 755 data
+   chmod 644 data/config.yaml data/nodes.txt
+   ```
+
+2. **Incorrect Volume Mapping**:
+   - Ensure `docker-compose.yml` uses `./data:/etc/easy_proxies`
+   - Do not use absolute paths or incorrect directories
+
+3. **Missing UID/GID on Startup**:
+   ```bash
+   # Correct startup command
+   UID=$(id -u) GID=$(id -g) docker-compose up -d
+   ```
+
+**Verify Configuration Persistence**:
+```bash
+# Check file modification times
+ls -lh data/config.yaml data/nodes.txt
+
+# Check container logs for save confirmations
+docker-compose logs -f | grep "Saved"
+```
+
+**Detailed Troubleshooting**: See [docs/troubleshooting-persistence.md](docs/troubleshooting-persistence.md)
+
 ### Docker Permission Issues
 
 **Problem**: When using `docker-compose.yml` with volume mapping, you may encounter permission errors like "permission denied" or "cannot write to /etc/easy_proxies".

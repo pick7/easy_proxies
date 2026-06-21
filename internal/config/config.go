@@ -1200,6 +1200,11 @@ func (c *Config) SaveNodes() error {
 		return errors.New("config file path is unknown")
 	}
 
+	// Check if config file is writable before attempting save
+	if err := checkFileWritable(c.filePath); err != nil {
+		return fmt.Errorf("config file not writable: %w (check file permissions and Docker volume mounts)", err)
+	}
+
 	// Separate nodes by source
 	var inlineNodes []NodeConfig
 	var fileNodes []NodeConfig
@@ -1230,9 +1235,14 @@ func (c *Config) SaveNodes() error {
 		if nodesFilePath == "" {
 			nodesFilePath = filepath.Join(filepath.Dir(c.filePath), "nodes.txt")
 		}
+		// Check writability before writing
+		if err := checkFileWritable(nodesFilePath); err != nil {
+			return fmt.Errorf("nodes file not writable: %w (check file permissions and Docker volume mounts)", err)
+		}
 		if err := writeNodesToFile(nodesFilePath, fileNodes); err != nil {
 			return fmt.Errorf("write nodes file %q: %w", nodesFilePath, err)
 		}
+		log.Printf("✅ Saved %d nodes to %s", len(fileNodes), nodesFilePath)
 	}
 
 	// Update config.yaml nodes array (including clearing it when all inline nodes are deleted)
@@ -1257,6 +1267,7 @@ func (c *Config) SaveNodes() error {
 		if err := writeFileWithLock(c.filePath, newData, 0o644); err != nil {
 			return fmt.Errorf("write config: %w", err)
 		}
+		log.Printf("✅ Saved %d inline nodes to %s", len(inlineNodes), c.filePath)
 	}
 
 	return nil
@@ -1321,6 +1332,45 @@ func IsPortAvailable(address string, port uint16) bool {
 	}
 	_ = ln.Close()
 	return true
+}
+
+// checkFileWritable checks if a file is writable. Creates parent directories if needed.
+func checkFileWritable(path string) error {
+	// Ensure parent directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create directory %q: %w", dir, err)
+	}
+
+	// Check if file exists
+	info, err := os.Stat(path)
+	if err == nil {
+		// File exists, check if writable
+		if info.Mode().Perm()&0o200 == 0 {
+			return fmt.Errorf("file %q is read-only (mode: %s)", path, info.Mode())
+		}
+		// Try to open for writing
+		f, err := os.OpenFile(path, os.O_WRONLY, 0)
+		if err != nil {
+			return fmt.Errorf("cannot open for writing: %w", err)
+		}
+		f.Close()
+		return nil
+	}
+
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("stat file: %w", err)
+	}
+
+	// File doesn't exist, check if directory is writable
+	testFile := filepath.Join(dir, ".write_test")
+	f, err := os.Create(testFile)
+	if err != nil {
+		return fmt.Errorf("directory %q is not writable: %w", dir, err)
+	}
+	f.Close()
+	os.Remove(testFile)
+	return nil
 }
 
 // writeFileWithLock writes data to a file with exclusive locking.
