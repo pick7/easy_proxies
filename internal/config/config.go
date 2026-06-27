@@ -113,8 +113,8 @@ type ManagementConfig struct {
 	Enabled          *bool  `yaml:"enabled"`
 	Listen           string `yaml:"listen"`
 	ProbeTarget      string `yaml:"probe_target"`
-	Password         string `yaml:"password"`           // WebUI 访问密码，为空则不需要密码
-	ProbeConcurrency int    `yaml:"probe_concurrency"`  // 并发探测线程数（10-100），0 表示使用默认值
+	Password         string `yaml:"password"`          // WebUI 访问密码，为空则不需要密码
+	ProbeConcurrency int    `yaml:"probe_concurrency"` // 并发探测线程数（10-100），0 表示使用默认值
 }
 
 // SubscriptionRefreshConfig controls subscription auto-refresh and reload settings.
@@ -397,7 +397,9 @@ func (c *Config) normalize() error {
 	if len(c.Nodes) == 0 {
 		return errors.New("config.nodes cannot be empty (configure nodes in config or use nodes_file)")
 	}
-	portCursor := c.MultiPort.BasePort
+	// portCursor is an int (not uint16) so the >65535 exhaustion guard fires
+	// instead of wrapping to 0 and assigning unbindable low ports.
+	portCursor := int(c.MultiPort.BasePort)
 	for idx := range c.Nodes {
 		c.Nodes[idx].Name = strings.TrimSpace(c.Nodes[idx].Name)
 		c.Nodes[idx].URI = strings.TrimSpace(c.Nodes[idx].URI)
@@ -415,19 +417,16 @@ func (c *Config) normalize() error {
 			c.Nodes[idx].Name = fmt.Sprintf("node-%d", idx)
 		}
 
-		// Auto-assign port in multi-port/hybrid mode, skip occupied ports
+		// Provisional port assignment only. The real, bind-checked, collision-safe
+		// assignment is done once by applyPersistedPorts → NormalizeWithPortMap
+		// right after normalize() returns. Probing IsPortAvailable per node here
+		// would double the socket open/close work at startup (16k+ syscalls for
+		// 8k nodes) for a result that is immediately discarded.
 		if c.Nodes[idx].Port == 0 && (c.Mode == "multi-port" || c.Mode == "hybrid") {
-			for !IsPortAvailable(c.MultiPort.Address, portCursor) {
-				log.Printf("⚠️  Port %d is in use, trying next port", portCursor)
-				portCursor++
-				if portCursor > 65535 {
-					return fmt.Errorf("no available ports found starting from %d", c.MultiPort.BasePort)
-				}
-			}
-			c.Nodes[idx].Port = portCursor
+			c.Nodes[idx].Port = uint16(portCursor)
 			portCursor++
 		} else if c.Nodes[idx].Port == 0 {
-			c.Nodes[idx].Port = portCursor
+			c.Nodes[idx].Port = uint16(portCursor)
 			portCursor++
 		}
 
@@ -520,6 +519,26 @@ func loadNodePortMap(path string) map[string]uint16 {
 	return m
 }
 
+// bridgeLegacyPortKeys upgrades a port-map sidecar written by an older version
+// (keyed by the raw full node URI) to the current stable-key scheme. For each
+// node whose stable key is absent but whose raw URI is present in the map, it
+// copies the port under the stable key. This makes a one-time format upgrade
+// transparent: ports are preserved instead of all being reassigned on the first
+// boot after upgrading. It mutates saved in place and is a no-op once the
+// sidecar has been rewritten with stable keys.
+func bridgeLegacyPortKeys(nodes []NodeConfig, saved map[string]uint16) {
+	for i := range nodes {
+		stableKey := nodes[i].NodeKey()
+		if _, ok := saved[stableKey]; ok {
+			continue
+		}
+		legacyKey := strings.TrimSpace(nodes[i].URI)
+		if port, ok := saved[legacyKey]; ok && port > 0 {
+			saved[stableKey] = port
+		}
+	}
+}
+
 // SaveNodePortMap persists the current node→port assignments next to the config
 // file so a restart can restore them. It is a no-op in pool mode, where nodes
 // have no per-node ports.
@@ -557,13 +576,22 @@ func (c *Config) applyPersistedPorts() error {
 	if c.Mode != "multi-port" && c.Mode != "hybrid" {
 		return nil
 	}
-	if saved := loadNodePortMap(c.portMapPath()); len(saved) > 0 {
-		for i := range c.Nodes {
-			c.Nodes[i].Port = 0
-		}
-		if err := c.NormalizeWithPortMap(saved); err != nil {
-			return fmt.Errorf("restore persisted ports: %w", err)
-		}
+	// normalize() only assigned provisional ports (no bind checks). Run the
+	// authoritative, bind-checked assignment exactly once here. A saved sidecar
+	// supplies preserved ports; an empty/missing one means "assign all fresh".
+	saved := loadNodePortMap(c.portMapPath())
+	if len(saved) > 0 {
+		// Migrate any legacy entries: sidecars written before stableNodeKey was
+		// keyed by the raw full URI. Without this bridge, every node's stable key
+		// would miss on the first post-upgrade boot and all proxy ports would be
+		// reassigned at once. Map legacy raw-URI keys onto the new stable keys.
+		bridgeLegacyPortKeys(c.Nodes, saved)
+	}
+	for i := range c.Nodes {
+		c.Nodes[i].Port = 0
+	}
+	if err := c.NormalizeWithPortMap(saved); err != nil {
+		return fmt.Errorf("restore persisted ports: %w", err)
 	}
 	// Persisting is best-effort by design: the proxy runs correctly without the
 	// sidecar; only a subsequent restart would re-derive ports. A write failure
@@ -664,34 +692,45 @@ func (c *Config) NormalizeWithPortMap(portMap map[string]uint16) error {
 			c.Nodes[idx].Name = fmt.Sprintf("node-%d", idx)
 		}
 
-		// Check if this node has a preserved port from portMap
+		// Check if this node has a preserved port from portMap. Guard against a
+		// port that was already claimed by an earlier node sharing the same
+		// stable key (e.g. a subscription listing the same server twice under
+		// different display names): preserving it again would bind the same
+		// proxy port twice (EADDRINUSE). Such a node is left at Port==0 so the
+		// second pass assigns it a fresh, collision-free port.
 		if c.Mode == "multi-port" || c.Mode == "hybrid" {
 			nodeKey := c.Nodes[idx].NodeKey()
 			if existingPort, ok := portMap[nodeKey]; ok && existingPort > 0 {
-				c.Nodes[idx].Port = existingPort
-				usedPorts[existingPort] = true
-				log.Printf("✅ Preserved port %d for node %q", existingPort, c.Nodes[idx].Name)
+				if usedPorts[existingPort] {
+					log.Printf("⚠️  Port %d already assigned to another node with the same identity; node %q will get a fresh port", existingPort, c.Nodes[idx].Name)
+				} else {
+					c.Nodes[idx].Port = existingPort
+					usedPorts[existingPort] = true
+					log.Printf("✅ Preserved port %d for node %q", existingPort, c.Nodes[idx].Name)
+				}
 			}
 		}
 	}
 
-	// Second pass: assign new ports for nodes without preserved ports
-	portCursor := c.MultiPort.BasePort
+	// Second pass: assign new ports for nodes without preserved ports. portCursor
+	// is an int (not uint16) so the >65535 exhaustion guard actually fires:
+	// a uint16 cursor would wrap to 0 and silently hand out unbindable low ports.
+	portCursor := int(c.MultiPort.BasePort)
 	for idx := range c.Nodes {
 		if c.Nodes[idx].Port == 0 && (c.Mode == "multi-port" || c.Mode == "hybrid") {
 			// Find next available port that's not used
-			for usedPorts[portCursor] || !IsPortAvailable(c.MultiPort.Address, portCursor) {
+			for usedPorts[uint16(portCursor)] || !IsPortAvailable(c.MultiPort.Address, uint16(portCursor)) {
 				portCursor++
 				if portCursor > 65535 {
 					return fmt.Errorf("no available ports found starting from %d", c.MultiPort.BasePort)
 				}
 			}
-			c.Nodes[idx].Port = portCursor
-			usedPorts[portCursor] = true
+			c.Nodes[idx].Port = uint16(portCursor)
+			usedPorts[uint16(portCursor)] = true
 			log.Printf("📌 Assigned new port %d for node %q", portCursor, c.Nodes[idx].Name)
 			portCursor++
 		} else if c.Nodes[idx].Port == 0 {
-			c.Nodes[idx].Port = portCursor
+			c.Nodes[idx].Port = uint16(portCursor)
 			portCursor++
 		}
 
@@ -846,12 +885,13 @@ func loadNodesFromSubscription(subURL string, timeout time.Duration) ([]NodeConf
 func parseSubscriptionContent(content string) ([]NodeConfig, error) {
 	content = strings.TrimSpace(content)
 
-	// Quick check for YAML format (check first 16384 chars for "proxies:")
-	sampleSize := 16384
-	if len(content) < sampleSize {
-		sampleSize = len(content)
-	}
-	if strings.Contains(content[:sampleSize], "proxies:") {
+	// Detect Clash YAML by a line-anchored top-level "proxies:" key anywhere in
+	// the document. The whole content is scanned (not just a 16 KB prefix): full
+	// Clash configs often place proxies after large dns / rule / proxy-provider
+	// sections, so a fixed-size window would misdetect them as base64/plaintext
+	// and drop every node. Line-anchoring avoids matching a stray "proxies:"
+	// inside a base64 blob.
+	if strings.HasPrefix(content, "proxies:") || strings.Contains(content, "\nproxies:") {
 		return parseClashYAML(content)
 	}
 
@@ -1000,6 +1040,19 @@ type clashProxy struct {
 	ALPN                 []string `yaml:"alpn"`
 	CongestionController string   `yaml:"congestion-controller"`
 	UDPRelayMode         string   `yaml:"udp-relay-mode"`
+	// ShadowsocksR-specific fields
+	Protocol      string `yaml:"protocol"`
+	ProtocolParam string `yaml:"protocol-param"`
+	ObfsParam     string `yaml:"obfs-param"`
+	// Hysteria v1-specific fields
+	AuthStr        string `yaml:"auth-str"`
+	Auth           string `yaml:"auth"`
+	UpMbps         int    `yaml:"up"`
+	DownMbps       int    `yaml:"down"`
+	PeerSNI        string `yaml:"peer"`
+	RecvWindow     uint64 `yaml:"recv-window"`
+	RecvWindowConn uint64 `yaml:"recv-window-conn"`
+	DisableMTU     bool   `yaml:"disable_mtu_discovery"`
 }
 
 type clashWSOptions struct {
@@ -1069,6 +1122,10 @@ func convertClashProxyToURI(p clashProxy) string {
 		return buildHysteria2URI(p)
 	case "tuic":
 		return buildTUICURI(p)
+	case "ssr", "shadowsocksr":
+		return buildShadowsocksRURI(p)
+	case "hysteria":
+		return buildHysteriaURI(p)
 	default:
 		return ""
 	}
@@ -1303,6 +1360,89 @@ func buildTUICURI(p clashProxy) string {
 
 	// TUIC URI format: tuic://uuid:password@server:port?params#name
 	return fmt.Sprintf("tuic://%s:%s@%s:%d%s#%s", p.UUID, p.Password, p.Server, int(p.Port), query, url.QueryEscape(p.Name))
+}
+
+// buildShadowsocksRURI converts a Clash SSR proxy config to an SSR URI.
+// Format: ssr://base64(host:port:protocol:method:obfs:base64(password)/?obfsparam=base64&protoparam=base64&remarks=base64)
+func buildShadowsocksRURI(p clashProxy) string {
+	passwordB64 := base64.URLEncoding.EncodeToString([]byte(p.Password))
+
+	main := fmt.Sprintf("%s:%d:%s:%s:%s:%s",
+		p.Server, int(p.Port),
+		defaultStr(p.Protocol, "origin"),
+		defaultStr(p.Cipher, "none"),
+		defaultStr(p.Obfs, "plain"),
+		passwordB64,
+	)
+
+	var params []string
+	if p.ObfsParam != "" {
+		params = append(params, "obfsparam="+base64.URLEncoding.EncodeToString([]byte(p.ObfsParam)))
+	}
+	if p.ProtocolParam != "" {
+		params = append(params, "protoparam="+base64.URLEncoding.EncodeToString([]byte(p.ProtocolParam)))
+	}
+	if p.Name != "" {
+		params = append(params, "remarks="+base64.URLEncoding.EncodeToString([]byte(p.Name)))
+	}
+
+	payload := main
+	if len(params) > 0 {
+		payload += "/?" + strings.Join(params, "&")
+	}
+	return "ssr://" + base64.URLEncoding.EncodeToString([]byte(payload))
+}
+
+// buildHysteriaURI converts a Clash Hysteria v1 proxy config to a hysteria:// URI.
+// Format: hysteria://host:port?protocol=udp&auth=xxx&peer=sni&insecure=1&upmbps=N&downmbps=N&alpn=h3&obfs=xplus#name
+func buildHysteriaURI(p clashProxy) string {
+	params := url.Values{}
+	params.Set("protocol", "udp")
+
+	auth := p.AuthStr
+	if auth == "" {
+		auth = p.Auth
+	}
+	if auth == "" {
+		auth = p.Password
+	}
+	if auth != "" {
+		params.Set("auth", auth)
+	}
+	if p.ServerName != "" {
+		params.Set("peer", p.ServerName)
+	} else if p.SNI != "" {
+		params.Set("peer", p.SNI)
+	} else if p.PeerSNI != "" {
+		params.Set("peer", p.PeerSNI)
+	}
+	if p.SkipCertVerify {
+		params.Set("insecure", "1")
+	}
+	if p.UpMbps > 0 {
+		params.Set("upmbps", strconv.Itoa(p.UpMbps))
+	}
+	if p.DownMbps > 0 {
+		params.Set("downmbps", strconv.Itoa(p.DownMbps))
+	}
+	if len(p.ALPN) > 0 {
+		params.Set("alpn", strings.Join(p.ALPN, ","))
+	}
+	if p.Obfs != "" {
+		params.Set("obfs", p.Obfs)
+		if p.ObfsPassword != "" {
+			params.Set("obfsParam", p.ObfsPassword)
+		}
+	}
+
+	return fmt.Sprintf("hysteria://%s:%d?%s#%s", p.Server, int(p.Port), params.Encode(), url.QueryEscape(p.Name))
+}
+
+func defaultStr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // FilePath returns the config file path.

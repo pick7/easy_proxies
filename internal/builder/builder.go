@@ -528,6 +528,18 @@ func buildNodeOutbound(tag, rawURI string, skipCertVerify bool) (option.Outbound
 			return option.Outbound{}, err
 		}
 		return option.Outbound{Type: C.TypeHTTP, Tag: tag, Options: &opts}, nil
+	case "ssr", "shadowsocksr":
+		opts, err := buildShadowsocksROptions(rawURI)
+		if err != nil {
+			return option.Outbound{}, err
+		}
+		return option.Outbound{Type: C.TypeShadowsocksR, Tag: tag, Options: &opts}, nil
+	case "hysteria":
+		opts, err := buildHysteriaOptions(parsed, skipCertVerify)
+		if err != nil {
+			return option.Outbound{}, err
+		}
+		return option.Outbound{Type: C.TypeHysteria, Tag: tag, Options: &opts}, nil
 	default:
 		return option.Outbound{}, fmt.Errorf("unsupported scheme %q", parsed.Scheme)
 	}
@@ -1472,4 +1484,178 @@ func printProxyLinks(cfg *config.Config, metadata map[string]poolout.MemberMeta)
 
 	log.Println("═══════════════════════════════════════════════════════════════")
 	log.Println("")
+}
+
+// ---------------------------------------------------------------------------
+// ShadowsocksR (SSR) URI parser
+// ---------------------------------------------------------------------------
+// SSR URI format: ssr://base64(host:port:protocol:method:obfs:base64(password)/?params)
+// Params (base64-encoded values): obfsparam, protoparam, remarks, group
+
+func buildShadowsocksROptions(rawURI string) (option.ShadowsocksROutboundOptions, error) {
+	payload := strings.TrimPrefix(rawURI, "ssr://")
+	payload = strings.TrimPrefix(payload, "SSR://")
+	// Strip any fragment
+	if idx := strings.Index(payload, "#"); idx != -1 {
+		payload = payload[:idx]
+	}
+	payload = strings.TrimSpace(payload)
+
+	decoded, err := base64Decode(payload)
+	if err != nil {
+		return option.ShadowsocksROutboundOptions{}, fmt.Errorf("ssr base64 decode: %w", err)
+	}
+
+	// Split main part and params: host:port:protocol:method:obfs:password_b64/?key=val&...
+	mainPart := decoded
+	paramStr := ""
+	if idx := strings.Index(decoded, "/?"); idx != -1 {
+		mainPart = decoded[:idx]
+		paramStr = decoded[idx+2:]
+	} else if idx := strings.Index(decoded, "/"); idx != -1 && idx == len(decoded)-1 {
+		mainPart = decoded[:idx]
+	}
+
+	// Parse host:port:protocol:method:obfs:password_b64 (split from the RIGHT
+	// because the host part may contain colons for IPv6)
+	parts := strings.Split(mainPart, ":")
+	if len(parts) < 6 {
+		return option.ShadowsocksROutboundOptions{}, fmt.Errorf("ssr: expected at least 6 colon-separated fields, got %d", len(parts))
+	}
+	// Last 5 fields are fixed; everything before is the host (may contain colons).
+	n := len(parts)
+	host := strings.Join(parts[:n-5], ":")
+	portStr := parts[n-5]
+	protocol := parts[n-4]
+	method := parts[n-3]
+	obfs := parts[n-2]
+	passwordB64 := parts[n-1]
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		return option.ShadowsocksROutboundOptions{}, fmt.Errorf("ssr: invalid port %q", portStr)
+	}
+
+	password, err := base64Decode(passwordB64)
+	if err != nil {
+		return option.ShadowsocksROutboundOptions{}, fmt.Errorf("ssr password base64: %w", err)
+	}
+
+	opts := option.ShadowsocksROutboundOptions{
+		ServerOptions: option.ServerOptions{Server: host, ServerPort: uint16(port)},
+		Method:        method,
+		Password:      password,
+		Protocol:      protocol,
+		Obfs:          obfs,
+	}
+
+	// Parse optional params (values are base64-encoded)
+	if paramStr != "" {
+		params, _ := url.ParseQuery(paramStr)
+		if v := params.Get("obfsparam"); v != "" {
+			if d, err := base64Decode(v); err == nil {
+				opts.ObfsParam = d
+			}
+		}
+		if v := params.Get("protoparam"); v != "" {
+			if d, err := base64Decode(v); err == nil {
+				opts.ProtocolParam = d
+			}
+		}
+	}
+
+	return opts, nil
+}
+
+// base64Decode tries standard, URL-safe, raw-standard and raw-URL-safe decodings.
+func base64Decode(s string) (string, error) {
+	s = strings.TrimRight(strings.TrimSpace(s), "=")
+	// Pad to a multiple of 4 for standard decoders.
+	padded := s
+	if m := len(padded) % 4; m != 0 {
+		padded += strings.Repeat("=", 4-m)
+	}
+	if b, err := base64.StdEncoding.DecodeString(padded); err == nil {
+		return string(b), nil
+	}
+	if b, err := base64.URLEncoding.DecodeString(padded); err == nil {
+		return string(b), nil
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(s); err == nil {
+		return string(b), nil
+	}
+	if b, err := base64.RawURLEncoding.DecodeString(s); err == nil {
+		return string(b), nil
+	}
+	return "", fmt.Errorf("cannot base64-decode %q", s)
+}
+
+// ---------------------------------------------------------------------------
+// Hysteria v1 URI parser
+// ---------------------------------------------------------------------------
+// hysteria://host:port?protocol=udp&auth=xxx&peer=sni&insecure=1&upmbps=N&downmbps=N&alpn=h3&obfs=xplus&obfsParam=xxx#name
+
+func buildHysteriaOptions(u *url.URL, skipCertVerify bool) (option.HysteriaOutboundOptions, error) {
+	server, port, err := hostPort(u, 443)
+	if err != nil {
+		return option.HysteriaOutboundOptions{}, err
+	}
+
+	query := u.Query()
+	opts := option.HysteriaOutboundOptions{
+		ServerOptions: option.ServerOptions{Server: server, ServerPort: uint16(port)},
+	}
+
+	// Auth string
+	if auth := query.Get("auth"); auth != "" {
+		opts.AuthString = auth
+	}
+
+	// Bandwidth
+	if v := query.Get("upmbps"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			opts.UpMbps = n
+		}
+	}
+	if v := query.Get("downmbps"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			opts.DownMbps = n
+		}
+	}
+
+	// Obfuscation
+	if v := query.Get("obfs"); v != "" {
+		// Hysteria v1 obfs is just the obfs type ("xplus"); the param is separate.
+		// sing-box uses a single obfs field for the password.
+		obfsParam := query.Get("obfsParam")
+		if obfsParam == "" {
+			obfsParam = query.Get("obfs-password")
+		}
+		if obfsParam != "" {
+			opts.Obfs = obfsParam
+		} else {
+			opts.Obfs = v
+		}
+	}
+
+	// TLS
+	tlsOptions := &option.OutboundTLSOptions{
+		Enabled:    true,
+		ServerName: server,
+		Insecure:   skipCertVerify,
+	}
+	if sni := query.Get("peer"); sni != "" {
+		tlsOptions.ServerName = sni
+	} else if sni := query.Get("sni"); sni != "" {
+		tlsOptions.ServerName = sni
+	}
+	if ins := query.Get("insecure"); ins == "1" || strings.EqualFold(ins, "true") {
+		tlsOptions.Insecure = true
+	}
+	if alpn := query.Get("alpn"); alpn != "" {
+		tlsOptions.ALPN = badoption.Listable[string](strings.Split(alpn, ","))
+	}
+	opts.OutboundTLSOptionsContainer = option.OutboundTLSOptionsContainer{TLS: tlsOptions}
+
+	return opts, nil
 }
