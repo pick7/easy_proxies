@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"easy_proxies/internal/config"
@@ -80,6 +81,11 @@ type Server struct {
 	sessionMu  sync.RWMutex
 	sessions   map[string]*Session
 	sessionTTL time.Duration
+
+	// probeAllInFlight bounds batch "probe all" to a single concurrent run.
+	// Without it, N simultaneous requests each spin up to `concurrency` probes,
+	// multiplying total in-flight dials and starving host fd/memory limits.
+	probeAllInFlight atomic.Bool
 
 	subRefresher SubscriptionRefresher
 	nodeMgr      NodeManager
@@ -165,6 +171,10 @@ func (s *Server) SetConfig(cfg *config.Config) {
 		// up WebUI changes after a reload (batch probes read it per request).
 		if s.mgr != nil {
 			s.mgr.SetProbeConcurrency(cfg.ProbeConcurrencyOrDefault())
+			// Re-derive the probe destination and strict-TLS mode so changes to
+			// probe_target / skip_cert_verify take effect on the long-lived
+			// manager without a full process restart.
+			s.mgr.SetProbeTarget(cfg.Management.ProbeTarget, cfg.SkipCertVerify)
 		}
 		// Sync proxy credentials based on mode
 		if cfg.Mode == "multi-port" || cfg.Mode == "hybrid" {
@@ -443,6 +453,17 @@ func (s *Server) handleProbeAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only one batch probe-all may run at a time. A second concurrent request
+	// would multiply total in-flight probes (each request bounds itself, but
+	// not the others), so reject it cleanly instead.
+	if !s.probeAllInFlight.CompareAndSwap(false, true) {
+		busy, _ := json.Marshal(map[string]any{"type": "error", "message": "批量探测已在进行中，请稍候"})
+		fmt.Fprintf(w, "data: %s\n\n", busy)
+		flusher.Flush()
+		return
+	}
+	defer s.probeAllInFlight.Store(false)
+
 	// Get all nodes
 	snapshots := s.mgr.Snapshot()
 	total := len(snapshots)
@@ -465,17 +486,21 @@ func (s *Server) handleProbeAll(w http.ResponseWriter, r *http.Request) {
 	sem := semaphore.NewWeighted(concurrency)
 
 	// Create context with a timeout scaled to node count and concurrency so that
-	// large inventories (e.g. thousands of nodes) are not cut off by a fixed
-	// 2-minute deadline. Each probe still has its own 10s deadline; here we only
-	// bound the total wall time as ceil(total / concurrency) * perProbe + slack.
+	// large inventories (e.g. thousands of nodes) are not cut off. Each probe
+	// still has its own 10s deadline; here we bound the total wall time as
+	// ceil(total / concurrency) * perProbe + slack, which is the expected
+	// completion time given the semaphore. We deliberately do NOT cap this below
+	// the estimate: a shorter deadline would cancel still-queued probes and
+	// report reachable nodes as failures (which can then blacklist them). The
+	// client can still abort early by closing the SSE connection (r.Context()).
 	perProbe := 10 * time.Second
 	batches := (int64(total) + concurrency - 1) / concurrency
 	totalTimeout := time.Duration(batches)*perProbe + 30*time.Second
 	if totalTimeout < 2*time.Minute {
 		totalTimeout = 2 * time.Minute
 	}
-	if totalTimeout > 30*time.Minute {
-		totalTimeout = 30 * time.Minute
+	if totalTimeout > 30*time.Minute && s.logger != nil {
+		s.logger.Printf("⚠️  批量探测节点数较多(%d, 并发%d)，预计最长耗时约 %s", total, concurrency, totalTimeout.Round(time.Second))
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), totalTimeout)
 	defer cancel()

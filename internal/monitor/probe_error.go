@@ -32,16 +32,23 @@ func nodeBrief(uri string) string {
 // parsing opaque sing-box / net error strings.
 //
 // Cases are matched top-down; more specific signatures must come before generic
-// ones (loopback addresses before "dial tcp", transport handshake before a bare
-// status code, dial-stage timeouts before read-stage ones).
+// ones (probe cancellation before timeouts, transport handshake before a bare
+// status code, dial-stage failures before read-stage timeouts).
 func classifyProbeError(err error) (category, summary string) {
 	if err == nil {
 		return "", ""
 	}
 	s := err.Error()
 	switch {
-	// Placeholder / loopback addresses left by broken subscription parsing.
-	case strings.Contains(s, "127.127.127.1") || strings.Contains(s, "127.0.0.1"):
+	// Probe was cancelled (overall batch deadline or client disconnect), not a
+	// node fault. Checked first so it isn't misread as a slow-link read timeout.
+	case strings.Contains(s, "context deadline exceeded") || strings.Contains(s, "context canceled"):
+		return "cancelled", "探测被取消(批量超时或连接中断,非节点故障)"
+
+	// Placeholder address left by broken subscription parsing. Only the sentinel
+	// 127.127.127.1 is treated as a parse artifact; a genuine 127.0.0.1 dial
+	// error falls through to the dial-stage bucket below for an accurate cause.
+	case strings.Contains(s, "127.127.127.1"):
 		return "addr_invalid", "节点地址无效(疑似订阅解析异常或占位地址)"
 
 	// Transport-layer handshake failures from sing-box outbounds: the server or

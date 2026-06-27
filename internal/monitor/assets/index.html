@@ -1011,6 +1011,28 @@
       return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
+    // escapeAttrJs makes a value safe to embed inside a single-quoted JS string
+    // literal that itself sits inside a double-quoted HTML attribute
+    // (e.g. onclick="probeNode('${escapeAttrJs(tag)}')"). HTML-entity escaping
+    // alone is NOT enough here: the parser decodes entities before the JS runs,
+    // so an apostrophe would break out of the string (or inject code). We
+    // JS-escape first (backslash quotes/newlines), then HTML-encode so the
+    // backslash-escaped quotes survive attribute parsing.
+    function escapeAttrJs(text) {
+      if(text == null) return '';
+      return String(text)
+        .replace(/\\/g,'\\\\')
+        .replace(/'/g,"\\'")
+        .replace(/"/g,'\\"')
+        .replace(/`/g,'\\`')
+        .replace(/\r/g,'\\r')
+        .replace(/\n/g,'\\n')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+    }
+
     async function refresh() {
       try {
         const res = await fetch('/api/nodes');
@@ -1215,8 +1237,8 @@
           <td class="tt-mono">${n.active_connections||0}</td>
           <td class="tt-mono" style="color: ${n.failure_count>0 ? 'var(--error)' : 'inherit'}">${n.failure_count||0}</td>
           <td>
-            <button class="btn btn-sm" onclick="probeNode('${escapeHtml(n.tag)}')">探测</button>
-            ${n.blacklisted ? `<button class="btn btn-sm btn-primary" onclick="releaseNode('${escapeHtml(n.tag)}')">解封</button>` : `<button class="btn btn-sm btn-danger" onclick="blacklistNode('${escapeHtml(n.tag)}')">拉黑</button>`}
+            <button class="btn btn-sm" onclick="probeNode('${escapeAttrJs(n.tag)}')">探测</button>
+            ${n.blacklisted ? `<button class="btn btn-sm btn-primary" onclick="releaseNode('${escapeAttrJs(n.tag)}')">解封</button>` : `<button class="btn btn-sm btn-danger" onclick="blacklistNode('${escapeAttrJs(n.tag)}')">拉黑</button>`}
           </td>
         </tr>`;
       }).join('');
@@ -1355,8 +1377,8 @@
             <td class="tt-mono">${n.port || '-'}</td>
             <td><span class="badge ${n.source==='subscription'?'badge-warning':'badge-healthy'}">${n.source||'manual'}</span></td>
             <td>
-              <button class="btn btn-sm" onclick="showEditNodeModal('${escapeHtml(n.name)}')">编辑</button>
-              <button class="btn btn-sm btn-danger" onclick="deleteNode('${escapeHtml(n.name)}')">删除</button>
+              <button class="btn btn-sm" onclick="showEditNodeModal('${escapeAttrJs(n.name)}')">编辑</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteNode('${escapeAttrJs(n.name)}')">删除</button>
             </td>
           </tr>
         `).join('');

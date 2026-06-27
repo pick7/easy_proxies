@@ -116,6 +116,56 @@ type Logger interface {
 	Warn(args ...any)
 }
 
+// clampProbeConcurrency is the single source of truth for the periodic probe
+// worker count: 0/unset → 32 default, then bounded to [8, 200]. Used by every
+// write path (NewManager, SetProbeConcurrency) so batch and periodic probes can
+// never disagree on the ceiling.
+func clampProbeConcurrency(n int) int {
+	if n <= 0 {
+		n = 32
+	}
+	if n < 8 {
+		n = 8
+	}
+	if n > 200 {
+		n = 200
+	}
+	return n
+}
+
+// resolveProbeTarget derives the probe destination, TLS SNI host and strict-TLS
+// decision from a probe target string. Strict TLS is enabled only for an https
+// target when skip_cert_verify is off. It is pure so both NewManager and the
+// live SetProbeTarget reload path share identical parsing.
+func resolveProbeTarget(probeTarget string, skipCertVerify bool) (dst M.Socksaddr, host string, useTLS, ready bool) {
+	if probeTarget == "" {
+		return M.Socksaddr{}, "", false, false
+	}
+	target := probeTarget
+	isHTTPS := strings.HasPrefix(target, "https://")
+	// Strip URL scheme if present (e.g., "https://www.google.com:443" -> "www.google.com:443")
+	if strings.HasPrefix(target, "https://") {
+		target = strings.TrimPrefix(target, "https://")
+	} else if strings.HasPrefix(target, "http://") {
+		target = strings.TrimPrefix(target, "http://")
+	}
+	// Remove trailing path if present
+	if idx := strings.Index(target, "/"); idx != -1 {
+		target = target[:idx]
+	}
+	h, port, err := net.SplitHostPort(target)
+	if err != nil {
+		// If no port specified, use default based on original scheme
+		h = target
+		if isHTTPS {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return M.ParseSocksaddrHostPort(h, parsePort(port)), h, isHTTPS && !skipCertVerify, true
+}
+
 // NewManager constructs a manager and pre-validates the probe target.
 func NewManager(cfg Config) (*Manager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -124,44 +174,9 @@ func NewManager(cfg Config) (*Manager, error) {
 		nodes:            make(map[string]*entry),
 		ctx:              ctx,
 		cancel:           cancel,
-		probeConcurrency: cfg.ProbeConcurrency,
+		probeConcurrency: clampProbeConcurrency(cfg.ProbeConcurrency),
 	}
-	if cfg.ProbeTarget != "" {
-		target := cfg.ProbeTarget
-		// Remember the scheme: an https target can be probed with strict TLS
-		// certificate verification when skip_cert_verify is disabled.
-		isHTTPS := strings.HasPrefix(target, "https://")
-		// Strip URL scheme if present (e.g., "https://www.google.com:443" -> "www.google.com:443")
-		if strings.HasPrefix(target, "https://") {
-			target = strings.TrimPrefix(target, "https://")
-		} else if strings.HasPrefix(target, "http://") {
-			target = strings.TrimPrefix(target, "http://")
-		}
-		// Remove trailing path if present
-		if idx := strings.Index(target, "/"); idx != -1 {
-			target = target[:idx]
-		}
-		host, port, err := net.SplitHostPort(target)
-		if err != nil {
-			// If no port specified, use default based on original scheme
-			if isHTTPS {
-				host = target
-				port = "443"
-			} else {
-				host = target
-				port = "80"
-			}
-		}
-		parsed := M.ParseSocksaddrHostPort(host, parsePort(port))
-		m.probeDst = parsed
-		m.probeHost = host
-		m.probeReady = true
-		// Strict mode: verify the TLS certificate chain during probe so nodes
-		// whose exit hijacks TLS with self-signed certs are detected and
-		// eventually blacklisted. Enabled only when skip_cert_verify is off
-		// and the target scheme is https.
-		m.probeTLS = isHTTPS && !cfg.SkipCertVerify
-	}
+	m.probeDst, m.probeHost, m.probeTLS, m.probeReady = resolveProbeTarget(cfg.ProbeTarget, cfg.SkipCertVerify)
 	return m, nil
 }
 
@@ -173,11 +188,28 @@ func (m *Manager) SetLogger(logger Logger) {
 // SetProbeConcurrency updates the worker limit used by periodic health checks.
 // Called when the live config changes so WebUI edits apply after a reload.
 func (m *Manager) SetProbeConcurrency(n int) {
-	if n < 8 {
-		n = 8
-	}
+	n = clampProbeConcurrency(n)
 	m.mu.Lock()
 	m.probeConcurrency = n
+	m.mu.Unlock()
+}
+
+// ProbeConcurrency returns the current periodic-probe worker limit (clamped).
+func (m *Manager) ProbeConcurrency() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.probeConcurrency
+}
+
+// SetProbeTarget re-derives the probe destination and strict-TLS decision from
+// the live config so WebUI changes to probe_target / skip_cert_verify take
+// effect after a reload without a full process restart. The monitor Manager is
+// a long-lived singleton, so without this the startup-time target/TLS mode
+// would persist until the process restarts.
+func (m *Manager) SetProbeTarget(probeTarget string, skipCertVerify bool) {
+	dst, host, useTLS, ready := resolveProbeTarget(probeTarget, skipCertVerify)
+	m.mu.Lock()
+	m.probeDst, m.probeHost, m.probeTLS, m.probeReady = dst, host, useTLS, ready
 	m.mu.Unlock()
 }
 
@@ -340,6 +372,8 @@ func (m *Manager) ClearNodes() {
 // host is the probe target's hostname (used as TLS SNI); useTLS is true when
 // the probe must perform a TLS handshake with strict certificate verification.
 func (m *Manager) DestinationForProbe() (dest M.Socksaddr, host string, useTLS bool, ok bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if !m.probeReady {
 		return M.Socksaddr{}, "", false, false
 	}
