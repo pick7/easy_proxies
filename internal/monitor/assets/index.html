@@ -740,9 +740,9 @@
               <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
                 <div class="form-group"><label>监听地址</label><input type="text" id="settingMgmtListen" class="setting-input" placeholder="0.0.0.0:8080" /></div>
                 <div class="form-group"><label>访问密码</label><input type="password" id="settingMgmtPassword" class="setting-input" /></div>
-                <div class="form-group"><label>探测并发数</label><input type="number" id="settingProbeConcurrency" class="setting-input" min="1" max="200" placeholder="32" /></div>
+                <div class="form-group"><label>探测并发数</label><input type="number" id="settingProbeConcurrency" class="setting-input" min="1" max="1024" placeholder="32" /></div>
               </div>
-              <div style="font-size: 11px; color: var(--text-muted); padding: 0 16px 12px;">探测并发数：批量探测与周期健康检查的并发线程数（10-200，默认 32），修改后需重载核心生效</div>
+              <div style="font-size: 11px; color: var(--text-muted); padding: 0 16px 12px;">探测并发数：初始/周期健康检查与批量探测的并发线程数（8-1024，默认 32），节点数多时调高可加快探测，修改后需重载核心生效</div>
             </div>
 
             <div class="panel" style="margin-bottom: 16px;">

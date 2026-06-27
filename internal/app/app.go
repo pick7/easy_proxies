@@ -11,7 +11,6 @@ import (
 	"easy_proxies/internal/boxmgr"
 	"easy_proxies/internal/config"
 	"easy_proxies/internal/monitor"
-	"easy_proxies/internal/outbound/pool"
 	"easy_proxies/internal/subscription"
 )
 
@@ -35,12 +34,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		ExternalIP:       cfg.ExternalIP,
 		ProbeConcurrency: cfg.ProbeConcurrencyOrDefault(),
 	}
-
-	// Bound total concurrent startup probes process-wide before any box starts.
-	// In hybrid/multi-port mode there is one pool per node; without this cap
-	// thousands of nodes would each fire a startup probe at once and exhaust
-	// file descriptors.
-	pool.SetStartupProbeLimit(cfg.ProbeConcurrencyOrDefault())
 
 	// Create and start BoxManager
 	boxMgr := boxmgr.New(cfg, monitorCfg)

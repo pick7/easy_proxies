@@ -31,7 +31,11 @@ const (
 	defaultHealthCheckTimeout = 30 * time.Second
 	healthCheckPollInterval   = 500 * time.Millisecond
 	periodicHealthInterval    = 5 * time.Minute
-	periodicHealthTimeout     = 10 * time.Second
+	// periodicHealthTimeout bounds each individual probe. Unreachable nodes wait
+	// out this full deadline, so at scale (thousands of nodes) it dominates the
+	// total sweep time; 8s comfortably covers a healthy node's dial+TLS+HTTP
+	// while letting dead nodes be abandoned sooner.
+	periodicHealthTimeout = 8 * time.Second
 )
 
 // Logger defines logging interface for the manager.

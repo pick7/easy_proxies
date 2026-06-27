@@ -117,9 +117,11 @@ type Logger interface {
 }
 
 // clampProbeConcurrency is the single source of truth for the periodic probe
-// worker count: 0/unset → 32 default, then bounded to [8, 200]. Used by every
-// write path (NewManager, SetProbeConcurrency) so batch and periodic probes can
-// never disagree on the ceiling.
+// worker count: 0/unset → 32 default, then bounded to [8, 1024]. The high
+// ceiling lets large inventories (thousands of nodes) finish the initial sweep
+// in minutes instead of ~an hour; fd use is ~2× the worker count, well within a
+// raised nofile limit. Used by every write path (NewManager, SetProbeConcurrency)
+// so batch and periodic probes can never disagree on the ceiling.
 func clampProbeConcurrency(n int) int {
 	if n <= 0 {
 		n = 32
@@ -127,8 +129,8 @@ func clampProbeConcurrency(n int) int {
 	if n < 8 {
 		n = 8
 	}
-	if n > 200 {
-		n = 200
+	if n > 1024 {
+		n = 1024
 	}
 	return n
 }
@@ -218,9 +220,14 @@ func (m *Manager) SetProbeTarget(probeTarget string, skipCertVerify bool) {
 // timeout: timeout for each probe (e.g., 10 * time.Second)
 func (m *Manager) StartPeriodicHealthCheck(interval, timeout time.Duration) {
 	if !m.probeReady {
+		// No probe target configured: nodes cannot be verified. Run probeAllNodes
+		// once so it marks every node initialCheckDone+available via its nil-probe
+		// branch — otherwise nodes stay initialCheckDone=false forever and both the
+		// export and the "healthy online" count read zero. Do not start the ticker.
 		if m.logger != nil {
-			m.logger.Warn("probe target not configured, periodic health check disabled")
+			m.logger.Warn("probe target not configured, marking all nodes available without verification")
 		}
+		m.probeAllNodes(timeout)
 		return
 	}
 
@@ -286,6 +293,15 @@ func (m *Manager) probeAllNodes(timeout time.Duration) {
 		e.mu.RUnlock()
 
 		if probeFn == nil {
+			// No probe function (probe target not configured): the node cannot be
+			// verified, so optimistically mark it checked+available — matching the
+			// old per-pool startup probe's "no target → mark available" behavior.
+			// Skipping it instead would leave initialCheckDone=false forever and
+			// exclude it from export and the healthy-online count.
+			e.mu.Lock()
+			e.initialCheckDone = true
+			e.available = true
+			e.mu.Unlock()
 			continue
 		}
 
@@ -387,8 +403,10 @@ func (m *Manager) Snapshot() []Snapshot {
 }
 
 // SnapshotFiltered returns a sorted copy of current node states.
-// If onlyAvailable is true, only returns nodes that passed initial health check.
-// Nodes that haven't been checked yet are also included (they will be checked on first use).
+// If onlyAvailable is true, only returns nodes that have completed their initial
+// health check and are currently available. This ensures the export function and
+// the "healthy online" count in the WebUI use the same strict criterion: a node
+// must be verified available, not merely "not yet proven unavailable".
 func (m *Manager) SnapshotFiltered(onlyAvailable bool) []Snapshot {
 	m.mu.RLock()
 	list := make([]*entry, 0, len(m.nodes))
@@ -399,10 +417,11 @@ func (m *Manager) SnapshotFiltered(onlyAvailable bool) []Snapshot {
 	snapshots := make([]Snapshot, 0, len(list))
 	for _, e := range list {
 		snap := e.snapshot()
-		// 如果只要可用节点：
-		// - 跳过已完成检查但不可用的节点
-		// - 保留未完成检查的节点（它们会在首次使用时被检查）
-		if onlyAvailable && ((snap.InitialCheckDone && !snap.Available) || snap.Blacklisted) {
+		// When onlyAvailable is true, apply the same strict filter as the
+		// "healthy online" statistic: InitialCheckDone && Available. This
+		// excludes unchecked nodes (which the old logic optimistically included)
+		// so export count matches the WebUI display.
+		if onlyAvailable && (!snap.InitialCheckDone || !snap.Available || snap.Blacklisted) {
 			continue
 		}
 		snapshots = append(snapshots, snap)

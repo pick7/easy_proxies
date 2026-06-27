@@ -37,42 +37,6 @@ const (
 	modeLatency    = "latency"
 )
 
-// Startup-probe concurrency is bounded process-wide, not per pool. In hybrid /
-// multi-port mode the builder creates ONE single-member pool per node, and each
-// pool launches its own startup probe. The per-pool worker limit is therefore
-// useless (a single-member pool runs exactly one probe), so with thousands of
-// nodes thousands of probe dials would fire simultaneously, exhausting file
-// descriptors and stalling the whole process. This shared semaphore caps the
-// TOTAL number of in-flight startup probes across every pool instance.
-var (
-	startupProbeSemOnce sync.Once
-	startupProbeSem     chan struct{}
-	startupProbeLimit   int32 = 64 // default; override via SetStartupProbeLimit before boxes start
-)
-
-// SetStartupProbeLimit sets the process-wide cap on concurrent startup probes.
-// Call it once before any box starts (e.g. from app setup) with the configured
-// probe concurrency. It is a no-op after the semaphore has been initialized.
-func SetStartupProbeLimit(n int) {
-	if n < 8 {
-		n = 8
-	}
-	if n > 256 {
-		n = 256
-	}
-	atomic.StoreInt32(&startupProbeLimit, int32(n))
-}
-
-// acquireStartupProbeSlot blocks until a global startup-probe slot is free and
-// returns a release func. Lazily initializes the semaphore on first use.
-func acquireStartupProbeSlot() func() {
-	startupProbeSemOnce.Do(func() {
-		startupProbeSem = make(chan struct{}, int(atomic.LoadInt32(&startupProbeLimit)))
-	})
-	startupProbeSem <- struct{}{}
-	return func() { <-startupProbeSem }
-}
-
 // Options controls pool outbound behaviour.
 type Options struct {
 	Mode              string
@@ -242,10 +206,11 @@ func (p *poolOutbound) Start(stage adapter.StartStage) error {
 	if err != nil {
 		return err
 	}
-	// 在初始化完成后，立即在后台触发健康检查
-	if p.monitor != nil {
-		go p.probeAllMembersOnStartup()
-	}
+	// Initial health checks are driven centrally by the monitor's probeAllNodes
+	// (StartPeriodicHealthCheck on boot, ProbeAllNow on reload), bounded by the
+	// configured probe concurrency. A per-pool startup probe re-probed the same
+	// nodes and, with one pool per node, required a process-wide semaphore to
+	// avoid fd exhaustion; routing all probing through the monitor removes both.
 	return nil
 }
 
@@ -302,117 +267,6 @@ func (p *poolOutbound) initializeMembersLocked() error {
 	p.logger.Info("pool initialized with ", len(members), " members")
 
 	return nil
-}
-
-// probeAllMembersOnStartup performs initial health checks on all members
-func (p *poolOutbound) probeAllMembersOnStartup() {
-	destination, host, useTLS, ok := p.monitor.DestinationForProbe()
-	if !ok {
-		p.logger.Warn("probe target not configured, skipping initial health check")
-		// 没有配置探测目标时，标记所有节点为可用
-		p.mu.Lock()
-		for _, member := range p.members {
-			if member.entry != nil {
-				member.entry.MarkInitialCheckDone(true)
-			}
-		}
-		p.mu.Unlock()
-		return
-	}
-
-	p.logger.Info("starting initial health check for all nodes")
-
-	p.mu.Lock()
-	members := make([]*memberState, len(p.members))
-	copy(members, p.members)
-	p.mu.Unlock()
-
-	// Concurrent probing with bounded workers. Honor the configured probe
-	// concurrency so startup matches the periodic/batch probe behavior instead
-	// of a fixed width; fall back to a safe default when unavailable.
-	maxWorkers := 20
-	if p.monitor != nil {
-		if n := p.monitor.ProbeConcurrency(); n > 0 {
-			maxWorkers = n
-		}
-	}
-	type probeResult struct {
-		member  *memberState
-		success bool
-		latency time.Duration
-		err     error
-	}
-
-	results := make(chan probeResult, len(members))
-	sem := make(chan struct{}, maxWorkers)
-
-	for _, member := range members {
-		sem <- struct{}{} // acquire worker slot
-		go func(m *memberState) {
-			defer func() { <-sem }() // release worker slot
-
-			// Bound total concurrent startup probes across ALL pools, otherwise
-			// thousands of single-member pools would dial simultaneously.
-			releaseGlobal := acquireStartupProbeSlot()
-			defer releaseGlobal()
-
-			ctx, cancel := context.WithTimeout(p.ctx, 15*time.Second)
-			defer cancel()
-
-			start := time.Now()
-			conn, err := m.outbound.DialContext(ctx, N.NetworkTCP, destination)
-			if err != nil {
-				results <- probeResult{member: m, err: err}
-				return
-			}
-
-			// Strict mode: upgrade to TLS and verify the certificate chain so
-			// that nodes whose exit hijacks TLS fail the startup probe too.
-			if conn, err = upgradeProbeConn(ctx, conn, host, useTLS); err != nil {
-				conn.Close()
-				results <- probeResult{member: m, err: err}
-				return
-			}
-
-			_, err = httpProbe(conn, destination.AddrString())
-			conn.Close()
-			if err != nil {
-				results <- probeResult{member: m, err: err}
-				return
-			}
-
-			results <- probeResult{member: m, success: true, latency: time.Since(start)}
-		}(member)
-	}
-
-	// Collect results
-	availableCount := 0
-	failedCount := 0
-	for i := 0; i < len(members); i++ {
-		res := <-results
-		if res.err != nil {
-			p.logger.Warn("initial probe failed: ", monitor.FormatProbeFailure(res.member.tag, p.options.Metadata[res.member.tag].URI, res.err))
-			failedCount++
-			if res.member.shared != nil {
-				res.member.shared.recordFailure(res.err, 1, p.options.BlacklistDuration)
-			} else if res.member.entry != nil {
-				res.member.entry.RecordFailure(res.err)
-			}
-			if res.member.entry != nil {
-				res.member.entry.MarkInitialCheckDone(false)
-			}
-		} else {
-			latencyMs := res.latency.Milliseconds()
-			p.logger.Info("initial probe success for ", res.member.tag, ", latency: ", latencyMs, "ms")
-			availableCount++
-			if res.member.entry != nil {
-				res.member.entry.RecordSuccessWithLatency(res.latency)
-				res.member.entry.MarkInitialCheckDone(true)
-			}
-		}
-	}
-
-	p.logger.Info("initial health check completed: ", availableCount, " available, ", failedCount, " failed")
 }
 
 func (p *poolOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {

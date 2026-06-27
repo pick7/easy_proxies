@@ -114,7 +114,7 @@ type ManagementConfig struct {
 	Listen           string `yaml:"listen"`
 	ProbeTarget      string `yaml:"probe_target"`
 	Password         string `yaml:"password"`          // WebUI 访问密码，为空则不需要密码
-	ProbeConcurrency int    `yaml:"probe_concurrency"` // 并发探测线程数（10-100），0 表示使用默认值
+	ProbeConcurrency int    `yaml:"probe_concurrency"` // 并发探测线程数（8-1024，默认 32），大规模节点可调高以加快探测
 }
 
 // SubscriptionRefreshConfig controls subscription auto-refresh and reload settings.
@@ -817,14 +817,14 @@ func (c *Config) ManagementEnabled() bool {
 }
 
 // ProbeConcurrencyOrDefault returns the configured probe concurrency clamped
-// to a safe range (1-200). When unset or invalid, a sensible default is used.
+// to a safe range (1-1024). When unset or invalid, a sensible default is used.
 func (c *Config) ProbeConcurrencyOrDefault() int {
 	v := c.Management.ProbeConcurrency
 	if v <= 0 {
 		return 32
 	}
-	if v > 200 {
-		return 200
+	if v > 1024 {
+		return 1024
 	}
 	return v
 }
