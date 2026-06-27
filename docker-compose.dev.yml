@@ -11,8 +11,14 @@ services:
     # macOS 不支持 network_mode: host，必须使用端口映射
     ports:
       - "2323:2323"       # Pool 入口
+      - "2324:2324"       # Sticky 入口
       - "9091:9091"       # WebUI
-      - "24000-24100:24000-24100"  # Multi-port
+      # multi-port 在 macOS Docker 中无法映射 8k 端口，仅映射前 100 个用于验证
+      - "24000-24100:24000-24100"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     user: "${UID:-10001}:${GID:-10001}"
     volumes:
       - ./data:/etc/easy_proxies

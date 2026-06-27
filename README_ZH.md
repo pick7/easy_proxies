@@ -40,13 +40,13 @@ cp nodes.example nodes.txt
 
 编辑 `config.yaml`，并配置节点来源（`nodes.txt` / `subscriptions` / `nodes`）。
 
+> 为什么要 `touch nodes.txt`？如果你用文件级挂载（如 `-v ./data/nodes.txt:/etc/easy_proxies/nodes.txt`）而宿主机上该文件不存在，Docker 会在宿主机上创建一个名为 `nodes.txt` 的**目录**并挂载进去，容器内就出现"本应是文件却是目录"的坑。预先创建文件（或直接挂载**目录** `./data:/etc/easy_proxies`，首启动会自动生成文件）可避免。若已踩坑：`rm -rf ./data/nodes.txt && touch ./data/nodes.txt` 后重启。
+
 ### 2）启动
 
 Docker：
 
 ```bash
-./start.sh
-# 或
 docker compose up -d
 ```
 
@@ -192,7 +192,11 @@ dns:
 
 **快速诊断**：
 ```bash
-./diagnose.sh
+# 检查 data 目录结构和权限
+ls -la data/
+[ -f data/config.yaml ]  || echo "缺少 data/config.yaml"
+[ -d data/config.yaml ]   && echo "异常：data/config.yaml 是目录（见快速开始说明）"
+[ -d data/nodes.txt ]    && echo "异常：data/nodes.txt 是目录（见快速开始说明）"
 ```
 
 **常见原因和解决方案**：
@@ -234,23 +238,15 @@ docker-compose logs -f | grep "Saved"
 
 **解决方案**：
 
-1. **使用提供的 `start.sh` 脚本（推荐）**：
-   ```bash
-   ./start.sh
-   ```
-   该脚本会自动：
-   - 创建 `data` 和 `logs` 目录
-   - 设置正确的权限
-   - 传递当前用户的 UID/GID 给 Docker
-
-2. **手动修复权限**：
+1. **使用 docker compose 挂载目录（推荐）**：
    ```bash
    mkdir -p data logs
    sudo chown -R $(id -u):$(id -g) data logs
    docker compose up -d
    ```
+   直接挂载整个 `./data` 目录，首启动会自动生成 `config.yaml` 和 `nodes.txt` 文件。
 
-3. **预先创建配置文件**（备选方法）：
+2. **预先创建配置文件**（备选，适用于文件级挂载）：
    ```bash
    mkdir -p data
    cp config.example.yaml data/config.yaml

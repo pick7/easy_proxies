@@ -11,19 +11,22 @@
 1. **文件权限问题**：容器内的用户没有写入宿主机目录的权限
 2. **卷映射错误**：配置文件没有正确映射到宿主机
 3. **文件系统只读**：某些环境下文件系统被挂载为只读
+4. **挂载不存在的文件 → Docker 创建目录**：见下文专项小节
 
 ## 快速诊断
 
-运行诊断脚本：
-
 ```bash
-./diagnose.sh
+# 检查 data 目录结构和权限
+ls -la data/
+[ -f data/config.yaml ]  || echo "缺少 data/config.yaml"
+[ -d data/config.yaml ]   && echo "异常：data/config.yaml 是目录（见下文 'nodes.txt/config.yaml 变成了目录'）"
+[ -d data/nodes.txt ]    && echo "异常：data/nodes.txt 是目录（见下文 'nodes.txt/config.yaml 变成了目录'）"
 ```
 
-该脚本会检查：
+该检查会判断：
 - 数据目录是否存在和可写
 - 配置文件权限
-- Docker 配置
+- 是否踩了"挂载不存在的文件 → Docker 创建目录"的坑
 - 给出修复建议
 
 ## 解决方案
@@ -160,6 +163,39 @@ chmod 755 data
 3. 确保使用 `./data:/etc/easy_proxies` 映射
 4. 重新启动：`UID=$(id -u) GID=$(id -g) docker-compose up -d`
 
+### 错误 5: "nodes.txt is a directory, not a file" / "config.yaml is a directory, not a file"
+
+**原因**：使用了文件级挂载（`-v ./data/nodes.txt:/etc/easy_proxies/nodes.txt`），但宿主机上 `./data/nodes.txt` 这个文件启动前不存在。Docker 此时不会报错，而是在宿主机上创建一个名为 `nodes.txt` 的**目录**并挂载进容器，于是容器内 `/etc/easy_proxies/nodes.txt` 变成了一个目录，应用读取/写入时失败。`config.yaml` 同理。
+
+**判别**：
+```bash
+ls -la data/
+# 若看到这样的行，即踩坑：
+# drwxr-xr-x  nodes.txt
+# drwxr-xr-x  config.yaml
+```
+
+**解决**（任选其一）：
+
+- 方式 A（推荐，目录挂载 + 首启动自动生成文件）：
+  ```bash
+  docker compose down
+  rm -rf data/nodes.txt data/config.yaml   # 删掉被错误创建成目录的路径
+  docker compose up -d                      # 由 entrypoint 自动生成真正的文件
+  ```
+
+- 方式 B（保留文件级挂载，预先在宿主机创建文件）：
+  ```bash
+  docker compose down
+  rm -rf data/nodes.txt data/config.yaml
+  cp config.example.yaml data/config.yaml
+  touch data/nodes.txt
+  chown -R $(id -u):$(id -g) data
+  docker compose up -d
+  ```
+
+> 注：`entrypoint.sh` 现在会检测到这个情况并立即退出、给出上述修复指引，而不是让应用以晦涩的运行时错误崩溃。
+
 ## Docker 最佳实践
 
 ### 推荐的目录结构
@@ -271,7 +307,11 @@ md5sum data/config.yaml
 
 如果以上方法都无法解决问题，请：
 
-1. 运行诊断脚本并保存输出：`./diagnose.sh > diagnose.log`
+1. 运行诊断命令并保存输出（见上"快速诊断"小节）：
+   ```bash
+   ls -la data/ > diagnose.log
+   docker compose logs easy_proxies > container.log
+   ```
 2. 收集容器日志：`docker-compose logs > container.log`
 3. 提供以下信息：
    - 操作系统和 Docker 版本

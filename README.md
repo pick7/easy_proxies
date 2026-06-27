@@ -32,7 +32,7 @@ touch nodes.txt
 
 Edit `config.yaml` and add your proxy nodes (inline nodes, `nodes.txt` file, or subscription URLs).
 
-> **Important**: `config.yaml` and `nodes.txt` MUST exist as files before starting the Docker container. If they don't exist, Docker will create them as directories, causing startup failure. Use `start.sh` to avoid this issue.
+> Why `touch nodes.txt`? If you bind-mount a host *file* path that doesn't exist yet (e.g. `-v ./data/nodes.txt:/etc/easy_proxies/nodes.txt`), Docker creates a **directory** named `nodes.txt` on the host and mounts that. The container then sees a directory where it expects a file and fails opaquely. Pre-creating the file (or mapping the **directory** `./data:/etc/easy_proxies`, which auto-generates files) avoids this. If you hit it, run `rm -rf ./data/nodes.txt && touch ./data/nodes.txt` and restart.
 
 ### 2. Run with Docker (Recommended)
 
@@ -49,8 +49,6 @@ docker run --user $(id -u):$(id -g) \
 
 Or use docker compose:
 ```bash
-./start.sh
-# or manually:
 docker compose up -d
 ```
 
@@ -393,7 +391,11 @@ In `multi-port`/`hybrid` mode, per-node ports are persisted to `node_ports.json`
 
 **Quick Diagnosis**:
 ```bash
-./diagnose.sh
+# Check your data directory layout and permissions
+ls -la data/
+[ -f data/config.yaml ]  || echo "missing data/config.yaml"
+[ -d data/config.yaml ]   && echo "BUG: data/config.yaml is a directory (see Quick Start note)"
+[ -d data/nodes.txt ]    && echo "BUG: data/nodes.txt is a directory (see Quick Start note)"
 ```
 
 **Common Causes and Solutions**:
@@ -435,23 +437,15 @@ docker-compose logs -f | grep "Saved"
 
 **Solutions**:
 
-1. **Use the provided `start.sh` script (Recommended)**:
-   ```bash
-   ./start.sh
-   ```
-   This script automatically:
-   - Creates `data` and `logs` directories
-   - Sets correct permissions
-   - Passes your current UID/GID to Docker
-
-2. **Manually fix permissions**:
+1. **Use docker compose with a directory mount (Recommended)**:
    ```bash
    mkdir -p data logs
    sudo chown -R $(id -u):$(id -g) data logs
    docker compose up -d
    ```
+   This maps the whole `./data` directory; `config.yaml` and `nodes.txt` are auto-generated as files on first run.
 
-3. **Pre-create config files** (alternative method):
+2. **Pre-create config files** (alternative, for file-level mounts):
    ```bash
    mkdir -p data
    cp config.example.yaml data/config.yaml
