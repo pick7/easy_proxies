@@ -24,11 +24,17 @@ fix_perm_hint="Ensure the mounted directory is writable by the container user:
 # --- config.yaml: reject directory, generate if absent ---
 if [ -d "$CONFIG_FILE" ]; then
     die "$CONFIG_FILE is a directory, not a file." \
-"This happens when you bind-mount a host file that does not exist yet
-(e.g. '-v ./data/config.yaml:/etc/easy_proxies/config.yaml'); Docker then
-creates a host directory named config.yaml. Fix on the host:
+"This happens when you bind-mount a host file that does not exist yet; Docker
+creates a directory instead. Fix depends on your mount configuration:
+
+  Directory mount (-v ./data:/etc/easy_proxies):
     rm -rf ./data/config.yaml
     cp config.example.yaml ./data/config.yaml
+    docker compose up -d
+
+  File mount (-v ./config.yaml:/etc/easy_proxies/config.yaml):
+    rm -rf ./config.yaml
+    cp config.example.yaml ./config.yaml
     docker compose up -d"
 fi
 if [ ! -e "$CONFIG_FILE" ]; then
@@ -40,11 +46,17 @@ fi
 # --- nodes.txt: reject directory, create empty file if absent ---
 if [ -d "$NODES_FILE" ]; then
     die "$NODES_FILE is a directory, not a file." \
-"This happens when you bind-mount a host file that does not exist yet
-(e.g. '-v ./data/nodes.txt:/etc/easy_proxies/nodes.txt'); Docker then
-creates a host directory named nodes.txt. Fix on the host:
+"This happens when you bind-mount a host file that does not exist yet; Docker
+creates a directory instead. Fix depends on your mount configuration:
+
+  Directory mount (-v ./data:/etc/easy_proxies):
     rm -rf ./data/nodes.txt
     touch ./data/nodes.txt
+    docker compose up -d
+
+  File mount (-v ./nodes.txt:/etc/easy_proxies/nodes.txt):
+    rm -rf ./nodes.txt
+    touch ./nodes.txt
     docker compose up -d"
 fi
 if [ ! -e "$NODES_FILE" ]; then

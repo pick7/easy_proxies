@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `start.sh` and `diagnose.sh` helper scripts; `docker compose up -d` (with a directory mount) is now the documented path. README/docs updated to inline the equivalent checks
 
 ### Fixed
+- **Error messages now match actual mount configuration**: entrypoint.sh error messages previously hardcoded `./data/` paths, causing confusion when using file-mount mode (`-v ./nodes.txt:/etc/easy_proxies/nodes.txt`). Now displays correct fix instructions for both directory-mount and file-mount configurations
+
+### Fixed
 - WebUI: long node names and URIs are now truncated so they no longer break the table layout
 - Prevent crash from malformed VLESS `packetEncoding` nodes
 - Preserve inline nodes when a subscription update occurs
