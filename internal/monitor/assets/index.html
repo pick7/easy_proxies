@@ -467,6 +467,7 @@
         <button class="btn btn-primary" onclick="probeAllNodes()">⚡ 批量探测</button>
         <button class="btn" id="refreshSubBtn" onclick="refreshSubscription()" style="display:none;">刷新订阅</button>
         <button class="btn" onclick="exportNodes()">导出配置</button>
+        <button class="btn" onclick="exportNodes(true)">全部导出</button>
         <button class="btn" onclick="toggleAutoRefresh()" id="autoRefreshBtn">⏹ 关闭自动刷新</button>
         <button class="btn" onclick="refresh()">↺ 刷新</button>
       </div>
@@ -1327,13 +1328,13 @@
       }
     }
 
-    async function exportNodes() {
+    async function exportNodes(all=false) {
       try {
-        const res = await fetch('/api/export');
+        const res = await fetch(all ? '/api/export?all=true' : '/api/export');
         if(!res.ok) throw new Error();
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'nodes.txt';
+        const a = document.createElement('a'); a.href = url; a.download = all ? 'nodes_all.txt' : 'nodes.txt';
         document.body.appendChild(a); a.click(); document.body.removeChild(a); window.URL.revokeObjectURL(url);
       } catch(e) { showToast('导出失败', 'error');}
     }

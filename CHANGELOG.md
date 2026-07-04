@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ports are preserved by a stable node identity derived from the URI (ignoring the display name and query-parameter order), so renamed or reordered subscription nodes keep their port
   - Assignments are persisted to `node_ports.json` next to `config.yaml` and restored on startup
 - **Shadowsocks-compatible link format**: support for additional Shadowsocks URI variants (#28)
+- **WebUI: export all nodes**: new "全部导出" button and `GET /api/export?all=true` that exports every node regardless of health (dead or alive); the default export still returns only healthy/available nodes
 
 ### Changed
 - Improved configuration persistence diagnostics and error handling
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error messages now match actual mount configuration**: entrypoint.sh error messages previously hardcoded `./data/` paths, causing confusion when using file-mount mode (`-v ./nodes.txt:/etc/easy_proxies/nodes.txt`). Now displays correct fix instructions for both directory-mount and file-mount configurations
 
 ### Fixed
+- **WebUI: dashboard blacklist/abnormal count stuck at 0**: `GET /api/nodes` returned only the filtered healthy set, so the frontend never saw blacklisted/unavailable nodes and their count always showed 0. It now returns the full node set, restoring the count and making blacklisted nodes visible in the table with a working "解封" (release) button
 - WebUI: long node names and URIs are now truncated so they no longer break the table layout
 - Prevent crash from malformed VLESS `packetEncoding` nodes
 - Preserve inline nodes when a subscription update occurs

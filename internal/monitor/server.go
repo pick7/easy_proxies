@@ -299,8 +299,9 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	// 只返回初始检查通过的可用节点
-	filtered := s.mgr.SnapshotFiltered(true)
+	// 返回全量节点，前端据此按状态统计（健康/拉黑/异常）并展示可解封的拉黑节点。
+	// 之前只返回 SnapshotFiltered(true)，导致 dashboard 的拉黑/异常计数恒为 0，
+	// 且拉黑节点不出现在表格里、无法解封。
 	allNodes := s.mgr.Snapshot()
 	totalNodes := len(allNodes)
 
@@ -320,7 +321,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"nodes":          filtered,
+		"nodes":          allNodes,
 		"total_nodes":    totalNodes,
 		"region_stats":   regionStats,
 		"region_healthy": regionHealthy,
@@ -719,8 +720,18 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 只导出初始检查通过的可用节点
-	snapshots := s.mgr.SnapshotFiltered(true)
+	// all=true 时导出全部节点（不论死活）；否则只导出初始检查通过的可用节点。
+	includeAll := false
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("all"))) {
+	case "1", "true", "yes":
+		includeAll = true
+	}
+	var snapshots []Snapshot
+	if includeAll {
+		snapshots = s.mgr.Snapshot()
+	} else {
+		snapshots = s.mgr.SnapshotFiltered(true)
+	}
 	var lines []string
 
 	seen := make(map[string]bool)
@@ -849,6 +860,9 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		filename = "proxy_pool_socks5.txt"
 	} else if scheme == "all" {
 		filename = "proxy_pool_all.txt"
+	}
+	if includeAll {
+		filename = "full_" + filename
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	_, _ = w.Write([]byte(strings.Join(lines, "\n")))
