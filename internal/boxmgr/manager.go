@@ -224,8 +224,20 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 		m.monitorMgr.ClearNodes()
 	}
 
-	// Create and start new box instance with automatic port conflict resolution
+	// Create and start new box instance.
+	//
+	// A bind conflict on start is almost always transient: the old box's
+	// listeners (the hybrid listener on 2323 and every per-node port on 24000+)
+	// were just closed and the OS has not yet released them. The fixed sleep
+	// above is a best-effort head start, not a guarantee. So on "address already
+	// in use" we WAIT and retry the SAME ports, keeping every preserved port
+	// stable across the refresh. Reassigning a node to a fresh port is a
+	// last-resort escape hatch (only once we've waited through several attempts):
+	// moving a port silently breaks clients pointed at the old one and is exactly
+	// the failure this guards against.
 	var instance *box.Box
+	started := false
+	var lastStartErr error
 	maxRetries := 10
 	for retry := 0; retry < maxRetries; retry++ {
 		var err error
@@ -234,20 +246,44 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 			m.rollbackToOldConfig(ctx, oldCfg)
 			return fmt.Errorf("create new box: %w", err)
 		}
-		if err = instance.Start(); err != nil {
-			_ = instance.Close()
-			// Check if it's a port conflict error
-			if conflictPort := extractPortFromBindError(err); conflictPort > 0 {
-				m.logger.Warnf("port %d is in use, reassigning and retrying...", conflictPort)
-				if reassigned := reassignConflictingPort(newCfg, conflictPort); reassigned {
-					pool.ResetSharedStateStore()
-					continue
-				}
-			}
+		if err = instance.Start(); err == nil {
+			started = true
+			break // Success
+		}
+		_ = instance.Close()
+		lastStartErr = err
+
+		conflictPort := extractPortFromBindError(err)
+		if conflictPort == 0 {
+			// Not a port conflict: unrecoverable by retrying. Roll back now.
 			m.rollbackToOldConfig(ctx, oldCfg)
 			return fmt.Errorf("start new box: %w", err)
 		}
-		break // Success
+
+		// Give the OS more time to release the just-closed listener, then retry
+		// the same port assignment.
+		m.logger.Warnf("port %d still in use on start attempt %d/%d, waiting for release and retrying...", conflictPort, retry+1, maxRetries)
+		time.Sleep(300 * time.Millisecond)
+
+		// Only after we've waited through the first half of our attempts do we
+		// treat the conflict as persistent (some other process owns the port)
+		// and reassign the offending node. The listener port cannot be
+		// reassigned this way; if it is the conflict we simply keep waiting.
+		if retry >= maxRetries/2 {
+			if reassignConflictingPort(newCfg, conflictPort) {
+				m.logger.Warnf("port %d persistently in use; reassigned the affected node to a fresh port", conflictPort)
+				pool.ResetSharedStateStore()
+			}
+		}
+	}
+
+	if !started {
+		// Never commit a closed / non-running instance as the current box: doing
+		// so silently kills every port (2323 and all 24000+) with no error. Fall
+		// back to the previous configuration instead.
+		m.logger.Errorf("new box failed to start after %d attempts: %v", maxRetries, lastStartErr)
+		m.rollbackToOldConfig(ctx, oldCfg)
+		return fmt.Errorf("start new box: exhausted %d attempts: %w", maxRetries, lastStartErr)
 	}
 
 	m.applyConfigSettings(newCfg)
@@ -290,14 +326,29 @@ func (m *Manager) rollbackToOldConfig(ctx context.Context, oldCfg *config.Config
 		return
 	}
 	m.logger.Warnf("attempting rollback to previous config...")
-	instance, err := m.createBox(ctx, oldCfg)
-	if err != nil {
-		m.logger.Errorf("rollback failed to create box: %v", err)
-		return
-	}
-	if err := instance.Start(); err != nil {
+
+	// The rollback binds the same ports the failed start attempted, which may
+	// still be draining. Retry with backoff so a transient bind conflict does
+	// not leave the manager with no running box at all.
+	var instance *box.Box
+	const rollbackAttempts = 5
+	for attempt := 0; attempt < rollbackAttempts; attempt++ {
+		var err error
+		instance, err = m.createBox(ctx, oldCfg)
+		if err != nil {
+			m.logger.Errorf("rollback failed to create box: %v", err)
+			return
+		}
+		if err = instance.Start(); err == nil {
+			break
+		}
 		_ = instance.Close()
-		m.logger.Errorf("rollback failed to start box: %v", err)
+		instance = nil
+		m.logger.Warnf("rollback start attempt %d/%d failed: %v", attempt+1, rollbackAttempts, err)
+		time.Sleep(300 * time.Millisecond)
+	}
+	if instance == nil {
+		m.logger.Errorf("rollback failed to start box after %d attempts", rollbackAttempts)
 		return
 	}
 	m.mu.Lock()
