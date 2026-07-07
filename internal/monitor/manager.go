@@ -116,6 +116,18 @@ type Manager struct {
 	probeSweepDone   atomic.Int32
 	probeSweepOK     atomic.Int32
 	probeSweepFail   atomic.Int32
+
+	// probeGate serializes health-check sweeps. probeAllNodes is triggered from
+	// several places concurrently (boot, the 5-minute ticker, and post-reload
+	// ProbeAllNow); without this gate two sweeps overlap, corrupt the shared
+	// progress counters, and — because each one clears probeSweepActive on
+	// return — leave the flag flapping so the dashboard progress bar reappears
+	// forever. The gate enforces single-flight and coalesces any trigger that
+	// arrives mid-sweep into exactly one follow-up pass (so a reload's newly
+	// registered nodes still get probed).
+	probeGate      sync.Mutex
+	sweepRunning   bool
+	rerunRequested bool
 }
 
 // ProbeSweepProgress reports the current health-check sweep progress. active is
@@ -276,8 +288,43 @@ func (m *Manager) ProbeAllNow(timeout time.Duration) {
 	m.probeAllNodes(timeout)
 }
 
-// probeAllNodes checks all registered nodes concurrently.
+// probeAllNodes runs a health-check sweep, but only one at a time. If a sweep is
+// already in flight, the request is coalesced: exactly one additional sweep runs
+// after the current one finishes, so triggers that arrive mid-sweep (e.g. a
+// reload registering new nodes) are honored without stacking up overlapping
+// sweeps that would corrupt the shared progress counters and wedge the WebUI
+// progress bar "active" flag on.
 func (m *Manager) probeAllNodes(timeout time.Duration) {
+	m.probeGate.Lock()
+	if m.sweepRunning {
+		// A sweep is running: request one follow-up pass and return. The running
+		// sweep will pick this up when it drains the gate.
+		m.rerunRequested = true
+		m.probeGate.Unlock()
+		return
+	}
+	m.sweepRunning = true
+	m.probeGate.Unlock()
+
+	for {
+		m.runProbeSweep(timeout)
+
+		m.probeGate.Lock()
+		if m.rerunRequested {
+			m.rerunRequested = false
+			m.probeGate.Unlock()
+			continue // A trigger arrived mid-sweep; run exactly one more pass.
+		}
+		m.sweepRunning = false
+		m.probeGate.Unlock()
+		return
+	}
+}
+
+// runProbeSweep checks all registered nodes concurrently. It is only ever
+// invoked by probeAllNodes, which guarantees single-flight execution, so the
+// shared probeSweep* progress counters are never written by two sweeps at once.
+func (m *Manager) runProbeSweep(timeout time.Duration) {
 	m.mu.RLock()
 	entries := make([]*entry, 0, len(m.nodes))
 	for _, e := range m.nodes {
